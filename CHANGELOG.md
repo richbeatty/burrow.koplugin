@@ -4,6 +4,13 @@ All notable changes to Burrow will be documented here.
 
 ## [Unreleased]
 
+## [0.3.5-beta] - 2026-08-05
+
+### Added
+
+- Added the stacked-books series marker to physical folders and collection-style directory tiles in Cover Grid
+- Added the Burrow Return to Library icon to the corresponding Cover List row
+
 ## [0.3.4-beta] - 2026-08-05
 
 ### Fixed
@@ -122,7 +129,8 @@ All notable changes to Burrow will be documented here.
 
 - Initial unified Burrow library, Store, and reader-interface package
 
-[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.3.4-beta...HEAD
+[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.3.5-beta...HEAD
+[0.3.5-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.5-beta
 [0.3.4-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.4-beta
 [0.3.3-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.3-beta
 [0.3.2-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.2-beta
