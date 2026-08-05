@@ -109,24 +109,24 @@ end
 -- failed group is disabled without preventing unrelated Burrow features.
 BurrowLoader:applyInstanceModules(Burrow)
 
--- Cover List has its own directory renderer, separate from the mosaic widgets
--- managed by the normal visual patch group. Apply its full-size rounded folder
--- treatment only when Burrow's library appearance features are enabled.
+-- Cover Grid and Cover List build directory artwork through separate widget
+-- paths. Apply Burrow's consistency layer after the normal visual modules so
+-- physical folders and automatic series use the same final presentation.
 if BurrowSettings:isFeatureEnabled("library_visuals") then
     local module_ok, module_or_error = pcall(require, "burrow_list_folder_covers")
     if module_ok and type(module_or_error) == "table" and type(module_or_error.apply) == "function" then
-        local apply_ok, applied, apply_error = pcall(module_or_error.apply)
+        local apply_ok, applied, apply_error = pcall(module_or_error.apply, Burrow)
         if not apply_ok or applied == false then
             logger.warn(
                 burrow_debug.logprefix,
-                "Cover List folder styling could not be applied",
+                "Folder and series styling could not be applied",
                 apply_ok and apply_error or applied
             )
         end
     else
         logger.warn(
             burrow_debug.logprefix,
-            "Cover List folder styling could not be loaded",
+            "Folder and series styling could not be loaded",
             module_or_error
         )
     end
