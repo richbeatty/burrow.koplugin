@@ -1,4 +1,4 @@
-BURROW 0.2.2 ALPHA INSTALLATION
+BURROW 0.3.0 BETA INSTALLATION
 
 1. Back up the KOReader data folder.
 2. Disable KOReader's built-in Cover Browser plugin.
