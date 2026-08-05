@@ -22,6 +22,7 @@ local Screen = require("device").screen
 local Size = require("ui/size")
 local TextWidget = require("ui/widget/textwidget")
 local TopContainer = require("ui/widget/container/topcontainer")
+local Widget = require("ui/widget/widget")
 local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan = require("ui/widget/verticalspan")
 local BookInfoManager = require("bookinfomanager")
@@ -234,24 +235,97 @@ local function directoryArtwork(item, width, height)
     }
 end
 
+-- FrameContainer draws a rounded border but does not clip its child image.
+-- Use the same explicit corner masking used by Burrow's book and hero covers so
+-- physical-folder artwork is actually rounded in both Cover Grid and Cover List.
+local RoundedDirectoryCover = Widget:extend {
+    inner = nil,
+    width = nil,
+    height = nil,
+    radius = 0,
+    border_size = 0,
+}
+
+function RoundedDirectoryCover:init()
+    self.dimen = Geom:new { w = self.width, h = self.height }
+end
+
+function RoundedDirectoryCover:getSize()
+    return self.dimen
+end
+
+function RoundedDirectoryCover:free(...)
+    if self.inner and self.inner.free then
+        self.inner:free(...)
+    end
+end
+
+function RoundedDirectoryCover:paintTo(bb, x, y)
+    local border = self.border_size or 0
+    local radius = math.min(
+        self.radius or 0,
+        math.floor(self.width / 2),
+        math.floor(self.height / 2)
+    )
+
+    bb:paintRect(x, y, self.width, self.height, Blitbuffer.COLOR_WHITE)
+    if self.inner then
+        self.inner:paintTo(bb, x + border, y + border)
+    end
+
+    if radius > 0 then
+        local radius_sq = radius * radius
+        for dy = 0, radius - 1 do
+            local cutoff = 0
+            local ddy = dy - radius
+            while cutoff < radius
+                    and (cutoff - radius) * (cutoff - radius) + ddy * ddy > radius_sq do
+                cutoff = cutoff + 1
+            end
+            if cutoff > 0 then
+                bb:paintRect(x, y + dy, cutoff, 1, Blitbuffer.COLOR_WHITE)
+                bb:paintRect(x + self.width - cutoff, y + dy, cutoff, 1, Blitbuffer.COLOR_WHITE)
+                bb:paintRect(x, y + self.height - dy - 1, cutoff, 1, Blitbuffer.COLOR_WHITE)
+                bb:paintRect(
+                    x + self.width - cutoff,
+                    y + self.height - dy - 1,
+                    cutoff,
+                    1,
+                    Blitbuffer.COLOR_WHITE
+                )
+            end
+        end
+    end
+
+    if border > 0 then
+        bb:paintBorder(
+            x,
+            y,
+            self.width,
+            self.height,
+            border,
+            Blitbuffer.COLOR_GRAY_3,
+            radius,
+            true
+        )
+    end
+end
+
 local function roundedDirectoryCover(item, max_w, max_h)
-    local border_total = Size.border.thin * 2
+    local border = Size.border.thin
+    local border_total = border * 2
     local art_w, art_h = fitPortrait(
         math.max(1, max_w - border_total),
         math.max(1, max_h - border_total)
     )
     local artwork = directoryArtwork(item, art_w, art_h)
 
-    return FrameContainer:new {
+    return RoundedDirectoryCover:new {
         width = art_w + border_total,
         height = art_h + border_total,
-        margin = 0,
-        padding = 0,
-        radius = Size.radius.default,
-        bordersize = Size.border.thin,
-        color = Blitbuffer.COLOR_GRAY_3,
-        background = Blitbuffer.COLOR_GRAY_3,
-        artwork,
+        radius = math.max(Screen:scaleBySize(6), Size.radius.default),
+        border_size = border,
+        inner = artwork,
     }
 end
 
@@ -273,16 +347,21 @@ local function directoryMarkerLayer(width, height)
         height = marker_size,
     }
 
+    -- LeftContainer vertically centers its child inside its own dimensions.
+    -- Giving it the full cover height placed the marker halfway down the cover.
+    -- Limit it to a shallow top row so the centered marker lands at the same
+    -- top/left inset used by Burrow's automatic-series marker.
+    local top_row_height = math.min(
+        height,
+        marker_size + (2 * DIRECTORY_MARKER_INSET)
+    )
     return TopContainer:new {
         dimen = Geom:new { w = width, h = height },
         LeftContainer:new {
-            dimen = Geom:new { w = width, h = height },
-            VerticalGroup:new {
-                VerticalSpan:new { width = DIRECTORY_MARKER_INSET },
-                HorizontalGroup:new {
-                    HorizontalSpan:new { width = DIRECTORY_MARKER_INSET },
-                    marker,
-                },
+            dimen = Geom:new { w = width, h = top_row_height },
+            HorizontalGroup:new {
+                HorizontalSpan:new { width = DIRECTORY_MARKER_INSET },
+                marker,
             },
         },
     }

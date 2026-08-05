@@ -181,13 +181,20 @@ local function patchBurrowFooter(plugin)
         return path ~= "" and path or "/"
     end
 
-    local function isHomeFolder(menu)
+    local function isLibraryFolder(menu)
         if not menu or not menu.path_items then
             return false
         end
         local home = normalizePath(G_reader_settings:readSetting("home_dir"))
         local current = normalizePath(menu.path)
-        return home ~= nil and current == home
+        if not home or not current then
+            return false
+        end
+        if home == "/" then
+            return current:sub(1, 1) == "/"
+        end
+        return current == home
+            or current:sub(1, #home + 1) == home .. "/"
     end
 
     local function getBurrowStore()
@@ -729,14 +736,14 @@ local function patchBurrowFooter(plugin)
             empty_footer_line = HorizontalSpan:new { width = 0 },
         }
 
-        if isHomeFolder(self) then
+        if isLibraryFolder(self) then
             activateHomeFooter(self)
         end
     end
 
     function CoverMenu:updatePageInfo(select_number)
         if self._home_store_state then
-            if isHomeFolder(self) then
+            if isLibraryFolder(self) then
                 activateHomeFooter(self)
             else
                 restoreOriginalFooter(self)
