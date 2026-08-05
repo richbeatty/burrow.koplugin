@@ -109,6 +109,24 @@ end
 -- failed group is disabled without preventing unrelated Burrow features.
 BurrowLoader:applyInstanceModules(Burrow)
 
+-- Older ProjectTitle and folder-cover builds may leave a generated collage in
+-- an entry's pt_cover_path/burrow_cover_path field. That is cache artwork, not
+-- a user-selected folder cover. Only recognize an actual cover/folder image
+-- stored inside the physical folder; otherwise the consistency layer will use
+-- the first available book cover.
+if not burrow_util._burrow_folder_cover_path_guarded then
+    burrow_util._burrow_folder_cover_path_guarded = true
+    local original_getFolderCover = burrow_util.getFolderCover
+    burrow_util.getFolderCover = function(filepath, max_img_w, max_img_h)
+        return original_getFolderCover(
+            filepath,
+            max_img_w,
+            max_img_h,
+            burrow_util.findCover(filepath)
+        )
+    end
+end
+
 -- Cover Grid and Cover List build directory artwork through separate widget
 -- paths. Apply Burrow's consistency layer after the normal visual modules so
 -- physical folders and automatic series use the same final presentation.
