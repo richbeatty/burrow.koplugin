@@ -1,0 +1,62 @@
+name: Validate Burrow
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Lua 5.1
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.1
+
+      - name: Check required files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f plugins/burrow.koplugin/main.lua
+          test -f plugins/burrow.koplugin/_meta.lua
+          test -f plugins/burrow.koplugin/burrow_loader.lua
+          test -f plugins/burrow.koplugin/burrow_library.lua
+          test -f plugins/burrow.koplugin/burrow_version.lua
+          test -f LICENSE
+          test -f NOTICE.md
+          test -f README.md
+
+      - name: Check Lua syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            luac5.1 -p "$file"
+          done < <(find plugins/burrow.koplugin -type f -name '*.lua' -print0)
+
+      - name: Reject runtime and personal files
+        shell: bash
+        run: |
+          set -euo pipefail
+          forbidden='(^|/)(settings|cache|history|books)(/|$)|\.sqlite3?$|crash\.log$|settings_reader\.lua$|opdsplus\.lua$|burrow_store\.lua$|2-burrow-bootstrap\.lua$|\.(ttf|otf|ttc)$'
+          if find . -type f -not -path './.git/*' | grep -E "$forbidden"; then
+            echo 'Forbidden runtime, personal, legacy, or font file found.' >&2
+            exit 1
+          fi
+
+      - name: Scan for common credential patterns
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RInE --exclude-dir=.git --exclude='*.svg' --exclude='*.png' --exclude='*.jpg' '(Authorization:[[:space:]]*(Basic|Bearer)|password[[:space:]]*=[[:space:]]*["'"'][^"'"']+["'"']|api[_-]?key[[:space:]]*=|token[[:space:]]*=[[:space:]]*["'"'][A-Za-z0-9_-]{20,}["'"'])' .; then
+            echo 'Possible embedded credential found. Review before merging.' >&2
+            exit 1
+          fi
