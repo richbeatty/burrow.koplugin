@@ -16,7 +16,7 @@ Burrow brings your local library, online catalogs, series navigation, and useful
 
 | Library | Store | Reader |
 |:---:|:---:|:---:|
-| _Screenshot coming soon_ | _Screenshot coming soon_ | _Screenshot coming soon_ |
+| docs/screenshots/library.png | _Screenshot coming soon_ | _Screenshot coming soon_ |
 
 <!--
 Suggested screenshot paths:
