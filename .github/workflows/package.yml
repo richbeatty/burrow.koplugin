@@ -79,8 +79,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # During active alpha development, keep the version tag aligned with
-          # the source used to build the downloadable package.
+          # During active pre-1.0 development, keep the version tag aligned
+          # with the source used to build the downloadable package.
           git tag -fa "$RELEASE_TAG" "$GITHUB_SHA" -m "Burrow $RELEASE_VERSION"
           git push origin "refs/tags/$RELEASE_TAG" --force
 
