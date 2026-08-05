@@ -7,7 +7,7 @@ All notable changes to Burrow will be documented here.
 ### Planned
 
 - Wider real-device testing across Android and dedicated e-ink devices
-- Public beta packaging and screenshots
+- Public beta screenshots and documentation polish
 - Additional automated regression coverage
 
 ## [0.2.1-alpha] - 2026-08-05
@@ -23,7 +23,7 @@ All notable changes to Burrow will be documented here.
 
 - Removed the exact KOReader version lock
 - Reduced `main.lua` to prerequisite checks, loader setup, and plugin-class creation
-- Moved remaining ProjectTitle-derived runtime patches into a guarded core module
+- Moved the core library runtime into a guarded module
 
 ### Fixed
 
@@ -34,8 +34,7 @@ All notable changes to Burrow will be documented here.
 
 ### Changed
 
-- Removed the external bootstrap userpatch
-- Converted Burrow to a plugin-only installation
+- Converted Burrow into a self-contained KOReader plugin
 - Added a phased, plugin-owned module loader
 
 ## [0.1.9-alpha] - 2026-08-05
@@ -56,8 +55,8 @@ All notable changes to Burrow will be documented here.
 
 ### Changed
 
-- Renamed active ProjectTitle and OPDS Plus namespaces to Burrow-owned names
-- Added one-time migration for compatible legacy settings and databases
+- Consolidated the library and Store under Burrow-owned names
+- Added one-time migration for compatible earlier settings and databases
 
 ## [0.1.0-alpha] - 2026-08-04
 
