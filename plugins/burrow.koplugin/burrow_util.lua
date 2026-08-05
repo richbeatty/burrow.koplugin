@@ -1,0 +1,980 @@
+local Blitbuffer = require("ffi/blitbuffer")
+local CenterContainer = require("ui/widget/container/centercontainer")
+local FrameContainer = require("ui/widget/container/framecontainer")
+local Geom = require("ui/geometry")
+local HorizontalGroup = require("ui/widget/horizontalgroup")
+local HorizontalSpan = require("ui/widget/horizontalspan")
+local ImageWidget = require("ui/widget/imagewidget")
+local LineWidget = require("ui/widget/linewidget")
+local Size = require("ui/size")
+local VerticalGroup = require("ui/widget/verticalgroup")
+local VerticalSpan = require("ui/widget/verticalspan")
+local OverlapGroup = require("ui/widget/overlapgroup")
+local Math = require("optmath")
+local logger = require("logger")
+local Device = require("device")
+local Screen = Device.screen
+local BD = require("ui/bidi")
+local T = require("ffi/util").template
+local DataStorage = require("datastorage")
+local SQ3 = require("lua-ljsqlite3/init")
+local ffiUtil = require("ffi/util")
+local util = require("util")
+local lfs = require("libs/libkoreader-lfs")
+local _ = require("l10n.gettext")
+local burrow_debug = require("burrow_debug")
+local BurrowMigration = require("burrow_migration")
+local BookInfoManager = require("bookinfomanager")
+
+
+--[[
+    Shared Burrow layout, metadata, icon, and formatting utilities.
+
+    External customizations should use KOReader userpatches rather than editing
+    this file directly, because package updates replace bundled source files.
+--]]
+
+
+local burrow_util = {}
+
+burrow_util.list_defaults = {
+    -- Progress bar settings
+    progress_bar_max_size = 235,      -- maximum progress bar width in pixels
+    progress_bar_pages_per_pixel = 3, -- pixels per page for progress bar calculation
+    progress_bar_min_size = 25,       -- minimum progress bar width in pixels
+
+    -- Author display settings
+    authors_limit_default = 2,     -- maximum number of authors to show
+    authors_limit_with_series = 1, -- maximum authors when series is also shown on separate line
+
+    -- Font size adjustment step (used when fitting text into available space)
+    fontsize_dec_step = 2, -- font size decrement step when adjusting to fit
+
+    -- Font size ranges (nominal sizes based on 64px item height)
+    directory_font_nominal = 20, -- nominal directory font size
+    directory_font_max = 26,     -- maximum directory font size
+    title_font_nominal = 20,     -- nominal title font size
+    title_font_max = 26,         -- maximum title font size
+    title_font_min = 20,         -- minimum title font size
+    authors_font_nominal = 14,   -- nominal authors/metadata font size
+    authors_font_max = 18,       -- maximum authors font size
+    authors_font_min = 10,       -- minimum authors font size
+    wright_font_nominal = 12,    -- nominal right widget font size
+    wright_font_max = 18,        -- maximum right widget font size
+
+    -- calibre tags/keywords
+    tags_font_min = 10,   -- minimum tags font size
+    tags_font_offset = 3, -- offset from authors font size for tags
+    tags_limit = 9999,    -- limits the number of tags displayed when enabled
+
+    -- Page item limits
+    max_items_per_page = 10,
+    min_items_per_page = 3,
+    default_items_per_page = 7,
+}
+
+-- These values adjust defaults and limits for the Cover Grid view
+burrow_util.grid_defaults = {
+    -- Progress bar settings
+    progress_bar_max_size = burrow_util.list_defaults.progress_bar_max_size,               -- maximum progress bar width in pixels
+    progress_bar_pages_per_pixel = burrow_util.list_defaults.progress_bar_pages_per_pixel, -- pixels per page for progress bar calculation
+    progress_bar_min_size = 40,                                                       -- minimum progress bar width in pixels
+
+    -- Font size adjustment step (used when fitting text into available space)
+    fontsize_dec_step = 1, -- font size decrement step when adjusting to fit
+
+    -- Font size ranges (nominal sizes based on 64px item height)
+    dir_font_nominal = 22, -- nominal directory font size
+    dir_font_min = 18,     -- minimum directory font size
+
+    -- Page item limits
+    max_cols = 4,
+    max_rows = 4,
+    min_cols = 2,
+    min_rows = 2,
+    default_cols = 3,
+    default_rows = 3,
+
+    -- Cover Art display
+    stretch_covers = false,
+    stretch_ratio = 1,
+}
+
+burrow_util.footer_defaults = {
+    font_size = 20,
+    font_size_deviceinfo = 18,
+}
+
+burrow_util.bookstatus_defaults = {
+    header_font_size = 20,
+    metainfo_font_size = 18,
+    title_font_size = 24,
+    description_font_size = Screen:scaleBySize(18),
+}
+
+burrow_util.good_serif = "cfont"
+burrow_util.good_serif_it = "cfont"
+burrow_util.good_serif_bold = "cfont"
+burrow_util.good_serif_boldit = "cfont"
+burrow_util.good_sans = "infont"
+burrow_util.good_sans_it = "infont"
+burrow_util.good_sans_bold = "infont"
+burrow_util.good_sans_boldit = "infont"
+burrow_util.title_serif = burrow_util.good_serif_boldit
+
+-- a non-standard space is used here because it looks nicer
+burrow_util.separator = {
+    bar     = " | ",
+    bullet  = " • ",
+    comma   = ", ", -- except here
+    dot     = " · ",
+    em_dash = " — ",
+    en_dash = " - ",
+}
+
+burrow_util.koreader_dir = DataStorage:getDataDir()
+local module_source = debug.getinfo(1, "S").source
+burrow_util.plugin_dir = module_source:match("^@(.+)/[^/]+$") or "."
+
+function burrow_util.getPluginDir()
+    return burrow_util.plugin_dir
+end
+
+function burrow_util.copyRecursive(from, to)
+    -- from: koreader/frontend/apps/filemanager/filemanager.lua
+    local cp_bin = Device:isAndroid() and "/system/bin/cp" or "/bin/cp"
+    return ffiUtil.execute(cp_bin, "-r", from, to ) == 0
+end
+
+function burrow_util.installFonts()
+    -- Burrow uses KOReader's registered UI font aliases and ships no font files.
+    return true
+end
+
+function burrow_util.installIcons()
+    local source_dir = burrow_util.plugin_dir .. "/icons"
+    local target_dir = burrow_util.koreader_dir .. "/icons"
+
+    if not util.directoryExists(source_dir) then
+        logger.warn(burrow_debug.logprefix, "Bundled icons directory is missing", source_dir)
+        return false
+    end
+    if not util.directoryExists(target_dir) and not util.makePath(target_dir) then
+        logger.warn(burrow_debug.logprefix, "Could not create icons directory", target_dir)
+        return false
+    end
+
+    -- These names also belong to KOReader and may have been customized by a
+    -- user or theme. Burrow copies them only when they do not already exist.
+    local shared_generic_icons = {
+        ["favorites.svg"] = true,
+        ["go_up.svg"] = true,
+        ["history.svg"] = true,
+        ["last_document.svg"] = true,
+        ["plus.svg"] = true,
+    }
+
+    local expected = {}
+    local copied_any = false
+    for name in lfs.dir(source_dir) do
+        if name ~= "." and name ~= ".." and name:match("%.svg$") then
+            local destination_name = name == "hero.svg" and "burrow.hero.svg" or name
+            expected[#expected + 1] = destination_name
+            local source = source_dir .. "/" .. name
+            local destination = target_dir .. "/" .. destination_name
+
+            -- Burrow-owned icon names are refreshed on upgrade. Shared generic
+            -- names are never overwritten, preserving themes and user icons.
+            if not shared_generic_icons[name] or not util.fileExists(destination) then
+                local ok, copied_or_error = pcall(ffiUtil.copyFile, source, destination)
+                if not ok or copied_or_error == false then
+                    logger.warn(
+                        burrow_debug.logprefix,
+                        "Could not install icon",
+                        name,
+                        copied_or_error
+                    )
+                else
+                    copied_any = true
+                end
+            end
+        end
+    end
+
+    if copied_any then
+        -- IconWidget caches resolved paths when first required. Clearing these
+        -- two module entries lets later Burrow modules see newly installed icons.
+        package.loaded["ui/widget/iconwidget"] = nil
+        package.loaded["ui/widget/iconbutton"] = nil
+    end
+
+    for _, name in ipairs(expected) do
+        if not util.fileExists(target_dir .. "/" .. name) then
+            logger.warn(burrow_debug.logprefix, "Installed icon is missing", name)
+            return false
+        end
+    end
+    return #expected > 0
+end
+
+function burrow_util.findCover(dir_path)
+    if not dir_path or dir_path == "" or dir_path == ".." or dir_path:match("%.%.$") then
+        return nil
+    end
+
+    dir_path = dir_path:gsub("[/\\]+$", "")
+    if not util.directoryExists(dir_path) then return nil end
+
+    local fn_lc
+    for fn in lfs.dir(dir_path) do
+        fn_lc = fn:lower()
+        if fn_lc:match('^%.?cover%.') or fn_lc:match('^%.?folder%.') then
+            if fn_lc:match('%.jpe?g$') or fn_lc:match('%.png$') or fn_lc:match('%.webp$') or fn_lc:match('%.gif$') then
+                return dir_path .. "/" .. fn
+            end
+        end
+    end
+    return nil
+end
+
+function burrow_util.getFolderCover(filepath, max_img_w, max_img_h, burrow_cover_path)
+    local folder_image_file = burrow_cover_path
+
+    if not folder_image_file then
+        folder_image_file = burrow_util.findCover(filepath)
+    end
+    if folder_image_file ~= nil then
+        local success, folder_image = pcall(function()
+            local temp_image = ImageWidget:new { file = folder_image_file, scale_factor = 1 }
+            temp_image:_render()
+            local orig_w = temp_image:getOriginalWidth()
+            local orig_h = temp_image:getOriginalHeight()
+            temp_image:free()
+            local scale_to_fill = 0
+            if orig_w and orig_h then
+                local scale_x = max_img_w / orig_w
+                local scale_y = max_img_h / orig_h
+                scale_to_fill = math.max(scale_x, scale_y)
+            end
+            return ImageWidget:new {
+                file = folder_image_file,
+                width = max_img_w,
+                height = max_img_h,
+                scale_factor = scale_to_fill,
+                center_x_ratio = 0.5,
+                center_y_ratio = 0.5,
+            }
+        end)
+        if success then
+            return FrameContainer:new {
+                width = max_img_w,
+                height = max_img_h,
+                margin = 0,
+                padding = 0,
+                bordersize = 0,
+                folder_image
+            }
+        else
+            logger.info(burrow_debug.logprefix, "Folder cover found but failed to render, could be too large or broken:",
+                folder_image_file)
+            local size_mult = 1.25
+            local _, _, scale_factor = BookInfoManager.getCachedCoverSize(250, 500, max_img_w * size_mult,
+                max_img_h * size_mult)
+            return FrameContainer:new {
+                width = max_img_w * size_mult,
+                height = max_img_h * size_mult,
+                margin = 0,
+                padding = 0,
+                bordersize = 0,
+                ImageWidget:new {
+                    file = burrow_util.getPluginDir() .. "/resources/file-unsupported.svg",
+                    alpha = true,
+                    scale_factor = scale_factor,
+                    original_in_nightmode = false,
+                }
+            }
+        end
+    else
+        return nil
+    end
+end
+
+function burrow_util.make_sql_safe(string)
+    string = string:gsub("'", "''") -- use '' inside '
+    string = string:gsub(";","_")   -- ljsqlite3 splits commands on semicolons
+    return string
+end
+
+function burrow_util.query_cover_paths(folder, include_subfolders)
+    local db_conn = SQ3.open(BurrowMigration.libraryDatabasePath())
+    db_conn:set_busy_timeout(5000)
+
+    if not util.directoryExists(folder) then return nil end
+
+    local query
+    local folder_safe = burrow_util.make_sql_safe(folder)
+    if include_subfolders then
+        query = string.format([[
+            SELECT directory, filename FROM bookinfo
+            WHERE directory LIKE '%s/%%' AND has_cover = 'Y'
+            ORDER BY RANDOM() LIMIT 16;
+            ]], folder_safe)
+    else
+        query = string.format([[
+            SELECT directory, filename FROM bookinfo
+            WHERE directory = '%s/' AND has_cover = 'Y'
+            ORDER BY RANDOM() LIMIT 16;
+            ]], folder_safe)
+    end
+
+    local res = db_conn:exec(query)
+    db_conn:close()
+    return res
+end
+
+function burrow_util.get_thumbnail_size(max_w, max_h)
+    local max_img_w = 0
+    local max_img_h = 0
+    if BookInfoManager:getSetting("use_stacked_foldercovers") then
+        max_img_w = (max_w * 0.75) - (Size.border.thin * 2) - Size.padding.default
+        max_img_h = (max_h * 0.75) - (Size.border.thin * 2) - Size.padding.default
+    else
+        max_img_w = (max_w - (Size.border.thin * 4) - Size.padding.small) / 2
+        max_img_h = (max_h - (Size.border.thin * 4) - Size.padding.small) / 2
+    end
+    return max_img_w, max_img_h
+end
+
+function burrow_util.build_cover_images(db_res, max_w, max_h)
+    local covers = {}
+    if db_res then
+        local directories = db_res[1]
+        local filenames = db_res[2]
+        local max_img_w, max_img_h = burrow_util.get_thumbnail_size(max_w, max_h)
+        for i, filename in ipairs(filenames) do
+            local fullpath = directories[i] .. filename
+            if util.fileExists(fullpath) then
+                local bookinfo = BookInfoManager:getBookInfo(fullpath, true)
+                if bookinfo then
+                    local border_total = (Size.border.thin * 2)
+                    local _, _, scale_factor = BookInfoManager.getCachedCoverSize(
+                        bookinfo.cover_w, bookinfo.cover_h, max_img_w, max_img_h)
+                    local wimage = ImageWidget:new {
+                        image = bookinfo.cover_bb,
+                        scale_factor = scale_factor,
+                    }
+                    table.insert(covers, FrameContainer:new {
+                        width = math.floor((bookinfo.cover_w * scale_factor) + border_total),
+                        height = math.floor((bookinfo.cover_h * scale_factor) + border_total),
+                        margin = 0,
+                        padding = 0,
+                        radius = Size.radius.default,
+                        bordersize = Size.border.thin,
+                        color = Blitbuffer.COLOR_GRAY_3,
+                        background = Blitbuffer.COLOR_GRAY_3,
+                        wimage,
+                    })
+                end
+                if #covers == 4 then break end
+            end
+        end
+    end
+    return covers
+end
+
+-- Helper to create a blank frame-style cover with background
+function burrow_util.create_blank_cover(width, height, background_idx)
+    local backgrounds = {
+        Blitbuffer.COLOR_LIGHT_GRAY,
+        Blitbuffer.COLOR_GRAY_D,
+        Blitbuffer.COLOR_GRAY_E,
+    }
+    local max_img_w = width - (Size.border.thin * 2)
+    local max_img_h = height - (Size.border.thin * 2)
+    return FrameContainer:new {
+        width = width,
+        height = height,
+        radius = Size.radius.default,
+        margin = 0,
+        padding = 0,
+        bordersize = Size.border.thin,
+        color = Blitbuffer.COLOR_DARK_GRAY,
+        background = backgrounds[background_idx],
+        CenterContainer:new {
+            dimen = Geom:new { w = max_img_w, h = max_img_h },
+            HorizontalSpan:new { width = max_img_w, height = max_img_h },
+        }
+    }
+end
+
+-- Build the diagonal stack layout using OverlapGroup
+function burrow_util.build_diagonal_stack(images, max_w, max_h)
+    local top_image_size = images[#images]:getSize()
+    local nb_fakes = (4 - #images)
+    for i = 1, nb_fakes do
+        table.insert(images, 1, burrow_util.create_blank_cover(top_image_size.w, top_image_size.h, (i % 2 + 2)))
+    end
+
+    local stack_items = {}
+    local stack_width = 0
+    local stack_height = 0
+    local inset_left = 0
+    local inset_top = 0
+    for _, img in ipairs(images) do
+        local frame = FrameContainer:new {
+            margin = 0,
+            bordersize = 0,
+            padding = nil,
+            padding_left = inset_left,
+            padding_top = inset_top,
+            img,
+        }
+        stack_width = math.max(stack_width, frame:getSize().w)
+        stack_height = math.max(stack_height, frame:getSize().h)
+        inset_left = inset_left + (max_w * 0.08)
+        inset_top = inset_top + (max_h * 0.08)
+        table.insert(stack_items, frame)
+    end
+
+    local stack = OverlapGroup:new {
+        dimen = Geom:new { w = stack_width, h = stack_height },
+    }
+    table.move(stack_items, 1, #stack_items, #stack + 1, stack)
+    local centered_stack = CenterContainer:new {
+        dimen = Geom:new { w = max_w, h = max_h },
+        stack,
+    }
+    return centered_stack
+end
+
+-- Build a 2x2 grid layout using nested horizontal & vertical groups
+function burrow_util.build_grid(images, max_w, max_h)
+    local row1 = HorizontalGroup:new {}
+    local row2 = HorizontalGroup:new {}
+    local layout = VerticalGroup:new {}
+
+    -- Create blank covers if needed
+    if #images == 3 then
+        local w3, h3 = images[3]:getSize().w, images[3]:getSize().h
+        table.insert(images, 2, burrow_util.create_blank_cover(w3, h3, 3))
+    elseif #images == 2 then
+        local w1, h1 = images[1]:getSize().w, images[1]:getSize().h
+        local w2, h2 = images[2]:getSize().w, images[2]:getSize().h
+        table.insert(images, 2, burrow_util.create_blank_cover(w1, h1, 3))
+        table.insert(images, 3, burrow_util.create_blank_cover(w2, h2, 2))
+    elseif #images == 1 then
+        local w1, h1 = images[1]:getSize().w, images[1]:getSize().h
+        table.insert(images, 1, burrow_util.create_blank_cover(w1, h1, 3))
+        table.insert(images, 2, burrow_util.create_blank_cover(w1, h1, 2))
+        table.insert(images, 4, burrow_util.create_blank_cover(w1, h1, 3))
+    end
+
+    for i, img in ipairs(images) do
+        if i < 3 then
+            table.insert(row1, img)
+        else
+            table.insert(row2, img)
+        end
+        if i == 1 then
+            table.insert(row1, HorizontalSpan:new { width = Size.padding.small })
+        elseif i == 3 then
+            table.insert(row2, HorizontalSpan:new { width = Size.padding.small })
+        end
+    end
+
+    table.insert(layout, row1)
+    table.insert(layout, VerticalSpan:new { width = Size.padding.small })
+    table.insert(layout, row2)
+    return layout
+end
+
+function burrow_util.getSubfolderCoverImages(filepath, max_w, max_h)
+    local db_res = burrow_util.query_cover_paths(filepath, false)
+    local images = burrow_util.build_cover_images(db_res, max_w, max_h)
+
+    if #images < 4 then
+        db_res = burrow_util.query_cover_paths(filepath, true)
+        images = burrow_util.build_cover_images(db_res, max_w, max_h)
+    end
+
+    -- Return nil if no images found
+    if #images == 0 then return nil end
+
+    if BookInfoManager:getSetting("use_stacked_foldercovers") then
+        return burrow_util.build_diagonal_stack(images, max_w, max_h)
+    else
+        return burrow_util.build_grid(images, max_w, max_h)
+    end
+end
+
+function burrow_util.line(width, color, thickness)
+    return HorizontalGroup:new {
+        HorizontalSpan:new { width = Screen:scaleBySize(10) },
+        LineWidget:new {
+            dimen = Geom:new { w = width - Screen:scaleBySize(20), h = thickness },
+            background = color,
+        },
+        HorizontalSpan:new { width = Screen:scaleBySize(10) },
+    }
+end
+
+burrow_util.thinWhiteLine = function(w) return burrow_util.line(w, Blitbuffer.COLOR_WHITE,  Size.line.thin) end
+burrow_util.thinGrayLine = function(w) return burrow_util.line(w, Blitbuffer.COLOR_GRAY,  Size.line.thin) end
+burrow_util.thinBlackLine  = function(w) return burrow_util.line(w, Blitbuffer.COLOR_BLACK, Size.line.thin) end
+burrow_util.mediumBlackLine  = function(w) return burrow_util.line(w, Blitbuffer.COLOR_BLACK, Size.line.medium) end
+
+function burrow_util.onFocus(_underline_container)
+    if not Device:isTouchDevice() or BookInfoManager:getSetting("force_focus_indicator") then
+        _underline_container.color = Blitbuffer.COLOR_BLACK
+    end
+end
+
+function burrow_util.onUnfocus(_underline_container)
+    if not Device:isTouchDevice() or BookInfoManager:getSetting("force_focus_indicator") then
+        _underline_container.color = Blitbuffer.COLOR_WHITE
+    end
+end
+
+function burrow_util.showProgressBar(pages)
+    local show_progress_bar = false
+    local est_page_count = pages or nil
+    if BookInfoManager:getSetting("force_max_progressbars") and not BookInfoManager:getSetting("show_pages_read_as_progress") then
+        est_page_count = burrow_util.list_defaults.progress_bar_pages_per_pixel * burrow_util.list_defaults.progress_bar_max_size
+    end
+    show_progress_bar = est_page_count ~= nil and
+        BookInfoManager:getSetting("hide_file_info") and                    -- "show file info"
+        not BookInfoManager:getSetting("show_pages_read_as_progress") and   -- "show pages read"
+        not BookInfoManager:getSetting("force_no_progressbars")             -- "show progress %"
+    return est_page_count, show_progress_bar
+end
+
+function burrow_util.isPathChooser(self)
+    local is_pathchooser = false
+    if (self.title_bar and self.title_bar.title ~= "") or (self.menu and self.menu.title ~= "") then
+        is_pathchooser = true
+    end
+    return is_pathchooser
+end
+
+function burrow_util.formatAuthors(authors, authors_limit)
+    local formatted_authors = ""
+    if authors and authors:find("\n") then
+        local full_authors_list = util.splitToArray(authors, "\n")
+        local nb_authors = #full_authors_list
+        local final_authors_list = {}
+        for i = 1, nb_authors do
+            full_authors_list[i] = BD.auto(full_authors_list[i])
+            if i == authors_limit and nb_authors > authors_limit then
+                table.insert(final_authors_list, T(_("%1 et al."), full_authors_list[i]))
+            else
+                table.insert(final_authors_list, full_authors_list[i])
+            end
+            if i == authors_limit then break end
+        end
+        formatted_authors = table.concat(final_authors_list, "\n")
+    elseif authors then
+        formatted_authors = BD.auto(authors)
+    end
+    return formatted_authors
+end
+
+function burrow_util.formatSeries(series, series_index)
+    local formatted_series = ""
+    if series_index then
+        formatted_series = "#" .. series_index .. burrow_util.separator.en_dash .. BD.auto(series)
+    else
+        formatted_series = BD.auto(series)
+    end
+    return formatted_series
+end
+
+function burrow_util.formatSeriesIndex(series_index)
+    local formatted_series_index = ""
+    formatted_series_index = " " .. series_index .. " "
+    if string.len(formatted_series_index) == 3 then
+        formatted_series_index = " " .. formatted_series_index .. " "
+    end
+    return formatted_series_index
+end
+
+function burrow_util.formatAuthorSeries(authors, series, series_mode, show_tags)
+    local formatted_author_series = ""
+    if authors == nil or authors == "" then
+        if series_mode == "series_in_separate_line" and series ~= "" then
+            formatted_author_series = series
+        end
+    else
+        if show_tags then
+            local authors_list = util.splitToArray(authors, "\n")
+            authors = table.concat(authors_list, burrow_util.separator.comma)
+        end
+        if series_mode == "series_in_separate_line" and series ~= "" then
+            if show_tags then
+                formatted_author_series = authors .. burrow_util.separator.dot .. series
+            else
+                formatted_author_series = authors .. "\n" .. series
+            end
+        else
+            formatted_author_series = authors
+        end
+    end
+    return formatted_author_series
+end
+
+-- Format tags/keywords coming from calibre/bookinfo.keywords
+-- Expect keywords as newline-separated values. Return a compact
+-- single-line string limited to `tags_limit` items or nil if no tags.
+function burrow_util.formatTags(keywords, tags_limit)
+    if not keywords or keywords == "" then return nil end
+    local final_tags_list = {}
+    local full_list = util.splitToArray(keywords, "\n")
+    local nb_tags = #full_list
+    if nb_tags == 0 then return nil end
+    tags_limit = tags_limit or 9999
+    for i = 1, math.min(tags_limit, nb_tags) do
+        local t = full_list[i]
+        if t and t ~= "" then
+            table.insert(final_tags_list, BD.auto(t))
+        end
+    end
+    local formatted_tags = table.concat(final_tags_list, burrow_util.separator.bullet)
+    if nb_tags > tags_limit then
+        formatted_tags = formatted_tags .. "…"
+    end
+    return formatted_tags
+end
+
+function burrow_util.formatProgressText(status, bookinfo, pages, draw_progressbar, percent_finished, progress_strings)
+    local pages_str = ""
+    local pages_left_str = ""
+    local percent_str = ""
+    local progress_str = ""
+
+    if status == "complete" then
+        progress_str = progress_strings.finished
+    elseif status == "abandoned" then
+        progress_str = progress_strings.abandoned
+    elseif percent_finished then
+        progress_str = progress_strings.reading
+        if not draw_progressbar then
+            percent_str = math.floor(100 * percent_finished) .. "%"
+        end
+        if pages then
+            if BookInfoManager:getSetting("show_pages_read_as_progress") then
+                percent_str = progress_strings.reading
+                pages_str = T(_("Page %1 of %2"), Math.round(percent_finished * pages), pages)
+            end
+            if BookInfoManager:getSetting("show_pages_left_in_progress") then
+                percent_str = progress_strings.reading
+                pages_left_str = T(_("%1 pages left"), Math.round(pages - percent_finished * pages), pages)
+            end
+        end
+    elseif not bookinfo._no_provider then
+        progress_str = progress_strings.unread
+    end
+
+    return progress_str, percent_str, pages_str, pages_left_str
+end
+
+function burrow_util.formatFooterText(footer_config, _manager, path, fm_default_dir, has_shortcut, meta_browse_mode)
+    if BookInfoManager:getSetting("replace_footer_text") then
+        local config = footer_config or {
+            order = {
+                "clock",
+                "wifi",
+                "battery",
+                "frontlight",
+                "frontlight_warmth",
+            },
+            wifi_show_disabled = true,
+            frontlight_show_off = true,
+        }
+        local genItemText = {
+            battery = function()
+                if Device:hasBattery() then
+                    local powerd = Device:getPowerDevice()
+                    local batt_lvl = powerd:getCapacity()
+                    local batt_symbol = powerd:getBatterySymbol(powerd:isCharged(), powerd:isCharging(), batt_lvl)
+                    local text = BD.wrap(batt_symbol) .. BD.wrap(batt_lvl .. "%")
+                    if Device:hasAuxBattery() and powerd:isAuxBatteryConnected() then
+                        local aux_batt_lvl = powerd:getAuxCapacity()
+                        local aux_batt_symbol =
+                            powerd:getBatterySymbol(powerd:isAuxCharged(), powerd:isAuxCharging(), aux_batt_lvl)
+                        text = text ..
+                            " " .. BD.wrap("+") .. BD.wrap(aux_batt_symbol) .. BD.wrap(aux_batt_lvl .. "%")
+                    end
+                    return text
+                end
+            end,
+            clock = function()
+                local datetime = require("datetime")
+                return datetime.secondsToHour(os.time(), G_reader_settings:isTrue("twelve_hour_clock"))
+            end,
+            frontlight = function()
+                if Device:hasFrontlight() then
+                    local prefix = "✺" -- "☼"
+                    local powerd = Device:getPowerDevice()
+                    if powerd:isFrontlightOn() then
+                        if Device:isCervantes() or Device:isKobo() then
+                            return (prefix .. "%d%%"):format(powerd:frontlightIntensity())
+                        else
+                            return (prefix .. "%d"):format(powerd:frontlightIntensity())
+                        end
+                    else
+                        return config.frontlight_show_off and T(_("%1Off"), prefix)
+                    end
+                end
+            end,
+            frontlight_warmth = function()
+                if Device:hasNaturalLight() then
+                    local prefix = "⊛" -- "💡"
+                    local powerd = Device:getPowerDevice()
+                    if powerd:isFrontlightOn() then
+                        local warmth = powerd:frontlightWarmth()
+                        if warmth then return (prefix .. "%d%%"):format(warmth) end
+                    else
+                        return config.frontlight_show_off and T(_("%1Off"), prefix)
+                    end
+                end
+            end,
+            wifi = function()
+                local NetworkMgr = require("ui/network/manager")
+                return NetworkMgr:isWifiOn() and "" or (config.wifi_show_disabled and "")
+            end,
+        }
+        local device_statuses = {}
+        local alt_footer = nil
+        for _, item in ipairs(config.order) do
+            local text = genItemText[item]()
+            if text then table.insert(device_statuses, text) end
+        end
+        if #device_statuses > 0 then alt_footer = table.concat(device_statuses, burrow_util.separator.dot) end
+        if _manager and type(_manager.name) == "string" then
+            return ""
+        else
+            return alt_footer
+        end
+    else
+        local display_path = ""
+        if (path == fm_default_dir or
+                            path == G_reader_settings:readSetting("home_dir")) and
+                            G_reader_settings:nilOrTrue("shorten_home_dir") then
+            display_path = _("Home")
+        elseif _manager and type(_manager.name) == "string" then
+            display_path = ""
+        else
+            -- show only the current folder name, not the whole path
+            local folder_name = "/"
+            local crumbs = {}
+            for crumb in string.gmatch(path, "[^/]+") do
+                table.insert(crumbs, crumb)
+            end
+            if #crumbs > 1 then
+                folder_name = table.concat(crumbs, "", #crumbs, #crumbs)
+            end
+            -- add a star if folder is in shortcuts
+            if has_shortcut then
+                folder_name = "★ " .. folder_name
+            end
+            display_path = folder_name
+        end
+        if meta_browse_mode == true then display_path = _("Library") end
+        return display_path
+    end
+end
+
+function burrow_util.getPageCount(fullpath)
+    local bookinfo = BookInfoManager:getBookInfo(fullpath, false)
+    if bookinfo then
+        return bookinfo.pages or nil
+    else
+        return nil
+    end
+end
+
+burrow_util.author_sort_copy_method_comma = false
+burrow_util.author_use_remove_bracketed_text = true
+burrow_util.author_name_copywords = {'agency', 'corporation', 'company', 'co.', 'council', 'committee', 'inc.', 'institute',
+                            'national', 'society', 'club', 'team', 'software', 'games', 'entertainment', 'media', 'studios',}
+burrow_util.author_use_name_copywords = true
+burrow_util.author_name_suffixes = {'jr', 'sr', 'inc', 'ph.d', 'phd', 'md', 'm.d', 'i', 'ii', 'iii', 'iv', 'junior', 'senior',}
+burrow_util.author_use_name_suffixes = true
+burrow_util.author_name_prefixes = {'mr', 'mrs', 'ms', 'dr', 'prof',}
+burrow_util.author_use_name_prefixes = true
+burrow_util.author_surname_prefixes = {'da', 'de', 'di', 'la', 'le', 'van', 'von',}
+burrow_util.author_use_surname_prefixes = false
+
+function burrow_util.arrayContainsMatch(t, s)
+    local cb = function(s1, s2)
+        if util.stringSearch(s1, s2, false, 1) ~= 0 then
+            return true
+        else
+            return false
+        end
+    end
+    for _k, _v in ipairs(t) do
+        if cb(s, _v) then
+            return true
+        end
+    end
+    return false
+end
+
+function burrow_util.removeMatches(t, s, at_end)
+    s = util.trim(s)
+    local r = 0
+    for _k, _v in ipairs(t) do
+        if at_end then
+            s, r = s:gsub(_v.."%.?$","")
+            if r > 0 then s = burrow_util.removeMatches(t, s, at_end) end
+        else
+            s, r = s:gsub("^".._v.."%.?","")
+            if r > 0 then s = burrow_util.removeMatches(t, s, at_end) end
+        end
+    end
+    return s
+end
+
+function burrow_util.conjoinMatches(t, s)
+    s = util.trim(s)
+    local r = 0
+    for _k, _v in ipairs(t) do
+        s, r = s:gsub("%s".._v.."%s+(%w+)$", " ".._v.."%1")
+        if r > 0 then s = burrow_util.conjoinMatches(t, s) end
+    end
+    return s
+end
+
+function burrow_util.swapAuthor(author)
+    -- method based on Calibre's "automatic author sort" functionality
+    -- https://github.com/kovidgoyal/calibre/blob/master/src/calibre/ebooks/metadata/__init__.py
+
+    -- if author contains a comma already then return it as-is
+    if burrow_util.author_sort_copy_method_comma and burrow_util.arrayContainsMatch({','}, author) then
+        return author
+    end
+
+    -- remove anything inside ()
+    if burrow_util.author_use_remove_bracketed_text then
+        author = author:gsub("%(.+%)","")
+    end
+
+    -- if author contains a "copyword" then return it as-is, preserving authors like "Acme Corporation" or "Bingo Club"
+    if burrow_util.author_use_name_copywords and burrow_util.arrayContainsMatch(burrow_util.author_name_copywords, author) then
+        return author
+    end
+
+    -- remove suffixes like Jr. and MD
+    if burrow_util.author_use_name_suffixes then
+        author = burrow_util.removeMatches(burrow_util.author_name_suffixes, util.stringLower(author), true)
+    end
+
+    -- remove prefixes like Mr. and Dr.
+    if burrow_util.author_use_name_prefixes then
+        author = burrow_util.removeMatches(burrow_util.author_name_prefixes, util.stringLower(author), false)
+    end
+
+    -- include surname prefixes in the sort, ie sort on "Van Der Graff" not "Graff"
+    if burrow_util.author_use_surname_prefixes then
+        author = burrow_util.conjoinMatches(burrow_util.author_surname_prefixes, util.stringLower(author))
+    end
+
+    -- Split on spaces and then move the last word to the front.
+    local author_lastname = ""
+    local author_firstname = ""
+    author_lastname = string.sub(author, util.lastIndexOf(author, " ") + 1, -1)
+    author_firstname = string.sub(author, 1, (string.len(author) - string.len(author_lastname)))
+    author = author_lastname .. " " .. author_firstname
+
+    return author
+end
+
+function burrow_util.getAuthor(fullpath, swap, bookinfo)
+    if fullpath ~= nil then
+        bookinfo = BookInfoManager:getBookInfo(fullpath, false)
+    end
+    local authors = ""
+    if bookinfo then
+        if bookinfo.authors then
+            authors = bookinfo.authors
+        else
+            return nil
+        end
+    else
+        return nil
+    end
+    local full_authors_list = util.splitToArray(authors, "\n")
+    local author = full_authors_list[1]
+    if author.match(author, " ") and swap then
+        author = burrow_util.swapAuthor(author)
+    end
+    return author
+end
+
+function burrow_util.getTitle(fullpath)
+    local bookinfo = BookInfoManager:getBookInfo(fullpath, false)
+    if bookinfo then
+        if bookinfo.title then
+            return bookinfo.title
+        else
+            return nil
+        end
+    else
+        return nil
+    end
+end
+
+burrow_util.max_index = "99999"
+function burrow_util.zeroPadIndex(i)
+    if type(i) ~= "number" then return burrow_util.max_index end
+    return string.format("%05d", i)
+end
+
+function burrow_util.getSeries(fullpath)
+    local bookinfo = BookInfoManager:getBookInfo(fullpath, false)
+    local series
+    if bookinfo then
+        if bookinfo.series then
+            series = bookinfo.series
+            if bookinfo.series_index then
+                series = series .. " " .. burrow_util.zeroPadIndex(bookinfo.series_index)
+            else
+                series = series .. " " .. burrow_util.max_index
+            end
+            return series
+        else
+            return nil
+        end
+    else
+        return nil
+    end
+end
+
+function burrow_util.getKeyword(fullpath)
+    local bookinfo = BookInfoManager:getBookInfo(fullpath, false)
+    if bookinfo then
+        if bookinfo.keywords then
+            return bookinfo.keywords
+        else
+            return nil
+        end
+    else
+        return nil
+    end
+end
+
+function burrow_util.getMetaSummary(fullpath, swap)
+    local bookinfo = BookInfoManager:getBookInfo(fullpath, false)
+    if bookinfo then
+        local author = burrow_util.getAuthor(nil, swap, bookinfo) or "\u{FFFF}"
+        local series = bookinfo.series or "\u{FFFF}"
+        local series_index = bookinfo.series_index or burrow_util.max_index
+        series_index = burrow_util.zeroPadIndex(series_index)
+        local title = bookinfo.title or "\u{FFFF}"
+        return author .. " " .. series  .. " " .. series_index .. " " .. title
+    else
+        return nil
+    end
+end
+
+return burrow_util

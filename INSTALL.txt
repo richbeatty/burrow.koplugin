@@ -1,0 +1,23 @@
+BURROW 0.2.1 ALPHA INSTALLATION
+
+1. Back up the KOReader data folder.
+2. Disable KOReader's built-in Cover Browser plugin.
+3. Remove or disable the legacy standalone plugins listed in REMOVE_OLD_FILES.txt.
+4. Delete the existing plugins/burrow.koplugin folder when upgrading.
+5. Delete patches/2-burrow-bootstrap.lua when upgrading from Burrow 0.1.x.
+6. Extract this archive into the KOReader data folder.
+7. Confirm these files exist:
+   plugins/burrow.koplugin/main.lua
+   plugins/burrow.koplugin/_meta.lua
+   plugins/burrow.koplugin/burrow_loader.lua
+8. Fully close and restart KOReader.
+
+Burrow 0.2.1 is plugin-only. No Burrow file is required in the patches folder.
+
+If the old bootstrap remains for the first transitional startup, Burrow's module guards prevent duplicate application and Burrow will ask you to remove the obsolete patch.
+
+On first startup, Burrow copies compatible legacy library and Store data into its Burrow-owned settings files. The legacy source files are not deleted.
+
+Minimum KOReader version: 2026.07.1
+Last tested KOReader version: 2026.07.1
+Newer releases are allowed with a compatibility warning.
