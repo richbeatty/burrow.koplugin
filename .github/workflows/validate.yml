@@ -53,8 +53,10 @@ jobs:
           fi
 
       - name: Scan public files for embedded credentials
-        shell: python
+        shell: bash
         run: |
+          set -euo pipefail
+          python3 <<'PY'
           from pathlib import Path
           import re
           import sys
@@ -106,3 +108,4 @@ jobs:
           if findings:
               print("\n".join(findings))
               sys.exit("Possible embedded credential found. Review before merging.")
+          PY
