@@ -256,27 +256,12 @@ local function patchBurrowCoverControls(plugin)
         local base_image_h = image._burrow_cover_size_base_height
         local base_frame_h = frame._burrow_cover_size_base_height
 
-        local max_frame_w = math.max(1, tonumber(item.width) or frame_w)
-        local max_frame_h = math.max(1, tonumber(item.height) or frame_h)
-        if hasExternalCaption(item) then
-            max_frame_h = math.max(1, max_frame_h - CAPTION_BLOCK)
-        end
-
-        local max_image_w = math.max(1, max_frame_w - chrome_w)
-        local max_image_h = math.max(1, max_frame_h - chrome_h)
-
-        -- Enlarging is allowed only while the resized cover still fits inside
-        -- its grid cell and the reserved caption area. Shrinking is unrestricted
-        -- down to the setting's lower bound.
-        local effective_factor = factor
-        if factor > 1 then
-            effective_factor = math.min(
-                factor,
-                max_image_w / base_image_w,
-                max_image_h / base_image_h
-            )
-        end
-        effective_factor = math.max(0.01, effective_factor)
+        -- Apply the requested scale directly. Values above 100 intentionally
+        -- let the visual cover use the surrounding grid space instead of being
+        -- silently capped by the original tile dimensions. The touch target and
+        -- grid remain unchanged, and book/series covers grow upward so the
+        -- caption can stay visible beneath them.
+        local effective_factor = math.max(0.01, factor)
 
         local new_image_w = math.max(1, round(base_image_w * effective_factor))
         local new_image_h = math.max(1, round(base_image_h * effective_factor))
@@ -470,7 +455,7 @@ local function patchBurrowCoverControls(plugin)
                 local SpinWidget = require("ui/widget/spinwidget")
                 UIManager:show(SpinWidget:new {
                     title_text = _("Cover size"),
-                    info_text = _("Resizes book covers, real folder covers, and virtual series covers. Enlarged book and series covers move upward so their titles remain visible underneath. Restart KOReader after saving."),
+                    info_text = _("Resizes book covers, real folder covers, and virtual series covers. Values above 100% deliberately use the surrounding grid space so covers become visibly larger. Enlarged book and series covers move upward so their titles remain visible underneath. Restart KOReader after saving."),
                     value = getCoverSize(),
                     default_value = DEFAULT_SIZE,
                     value_min = MIN_SIZE,
