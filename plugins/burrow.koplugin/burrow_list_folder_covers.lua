@@ -1,23 +1,23 @@
 -- Burrow folder and automatic-series cover consistency.
 --
--- KOReader's Cover Grid and Cover List build directory artwork through separate
--- widget paths. This module gives physical folders and automatic-series folders
--- one consistent treatment: a custom folder cover when one exists, otherwise
--- the first available book cover, with no multi-cover mosaic fallback.
+-- Cover Grid and Cover List build directory artwork through separate widget
+-- paths. Physical folders receive one book-like cover and one caption. Virtual
+-- series keep their native Burrow renderer in Cover Grid so they are not drawn
+-- twice, while Cover List still receives the same full-size rounded artwork.
 
+local BD = require("ui/bidi")
 local Blitbuffer = require("ffi/blitbuffer")
+local BottomContainer = require("ui/widget/container/bottomcontainer")
 local CenterContainer = require("ui/widget/container/centercontainer")
 local Font = require("ui/font")
 local FrameContainer = require("ui/widget/container/framecontainer")
 local Geom = require("ui/geometry")
 local ImageWidget = require("ui/widget/imagewidget")
+local OverlapGroup = require("ui/widget/overlapgroup")
 local Screen = require("device").screen
 local Size = require("ui/size")
-local TextBoxWidget = require("ui/widget/textboxwidget")
-local VerticalGroup = require("ui/widget/verticalgroup")
-local VerticalSpan = require("ui/widget/verticalspan")
+local TextWidget = require("ui/widget/textwidget")
 local BookInfoManager = require("bookinfomanager")
-local BurrowMigration = require("burrow_migration")
 local burrow_debug = require("burrow_debug")
 local burrow_util = require("burrow_util")
 local logger = require("logger")
@@ -32,7 +32,8 @@ local COVER_RATIO = 2 / 3
 local CAPTION_FONT_SIZE = 12
 local CAPTION_HEIGHT = Screen:scaleBySize(18)
 local CAPTION_GAP = Screen:scaleBySize(3)
-local SIDE_MARGIN = Screen:scaleBySize(4)
+local CAPTION_VERTICAL_RESERVE = 2 * (CAPTION_HEIGHT + CAPTION_GAP)
+local CAPTION_SIDE_MARGIN = Screen:scaleBySize(4)
 local LIST_PADDING = Screen:scaleBySize(4)
 
 local function entryIsFile(entry)
@@ -87,6 +88,7 @@ end
 local function fitPortrait(max_w, max_h)
     max_w = math.max(1, math.floor(max_w or 1))
     max_h = math.max(1, math.floor(max_h or 1))
+
     local w, h
     if max_w / max_h > COVER_RATIO then
         h = max_h
@@ -181,14 +183,18 @@ local function directoryArtwork(item, width, height)
             return series_cover
         end
     else
-        local folder_cover = burrow_util.getFolderCover(
-            item.filepath or entry.path,
-            width,
-            height,
-            BurrowMigration.folderCoverPath(entry)
-        )
-        if folder_cover then
-            return folder_cover
+        local path = item.filepath or entry.path
+        local local_cover_path = burrow_util.findCover(path)
+        if local_cover_path then
+            local folder_cover = burrow_util.getFolderCover(
+                path,
+                width,
+                height,
+                local_cover_path
+            )
+            if folder_cover then
+                return folder_cover
+            end
         end
 
         local first_book = firstPhysicalFolderCover(item, width, height)
@@ -220,6 +226,7 @@ local function roundedDirectoryCover(item, max_w, max_h)
         math.max(1, max_h - border_total)
     )
     local artwork = directoryArtwork(item, art_w, art_h)
+
     return FrameContainer:new {
         width = art_w + border_total,
         height = art_h + border_total,
@@ -235,13 +242,15 @@ end
 
 local function cleanTitle(item)
     local text = (item.entry and item.entry.text) or item.text or ""
-    return text:gsub("[/\\]+$", "")
+    text = text:gsub("[/\\]+$", "")
+    return text
 end
 
-local function rebuildMosaicDirectory(item)
+local function rebuildMosaicPhysicalFolder(item)
     local entry = item and item.entry
     if not entry
         or entryIsFile(entry)
+        or entryIsSeries(item)
         or entryIsNavigation(entry)
         or not item.do_cover_image
         or not item.width
@@ -250,31 +259,33 @@ local function rebuildMosaicDirectory(item)
         return
     end
 
-    local available_h = math.max(
+    -- Use the same vertical reserve as normal book and automatic-series covers.
+    -- The cover remains centered in the full tile and the caption occupies the
+    -- final line at the bottom, matching Burrow's standard book presentation.
+    local max_cover_h = math.max(
         Screen:scaleBySize(40),
-        item.height - CAPTION_HEIGHT - CAPTION_GAP
+        item.height - CAPTION_VERTICAL_RESERVE
     )
-    local cover = roundedDirectoryCover(
-        item,
-        math.max(1, item.width - 2 * SIDE_MARGIN),
-        available_h
-    )
-    local caption = TextBoxWidget:new {
-        text = cleanTitle(item),
+    local cover = roundedDirectoryCover(item, item.width, max_cover_h)
+    local caption = TextWidget:new {
+        text = BD.auto(cleanTitle(item)),
         face = Font:getFace("cfont", CAPTION_FONT_SIZE),
         bold = true,
-        width = math.max(1, item.width - 2 * SIDE_MARGIN),
-        height = CAPTION_HEIGHT,
-        height_adjust = true,
-        height_overflow_show_ellipsis = true,
+        max_width = math.max(1, item.width - 2 * CAPTION_SIDE_MARGIN),
         alignment = "center",
+        padding = 0,
+        forced_height = CAPTION_HEIGHT,
     }
 
-    local tile = CenterContainer:new {
-        dimen = Geom:new { w = item.width, h = item.height },
-        VerticalGroup:new {
+    local tile_dimen = Geom:new { w = item.width, h = item.height }
+    local tile = OverlapGroup:new {
+        dimen = tile_dimen,
+        CenterContainer:new {
+            dimen = tile_dimen,
             cover,
-            VerticalSpan:new { width = CAPTION_GAP },
+        },
+        BottomContainer:new {
+            dimen = tile_dimen,
             caption,
         },
     }
@@ -287,8 +298,8 @@ local function rebuildMosaicDirectory(item)
         previous:free(true)
     end
 
-    -- Disable the older physical-folder paint hook so it cannot redraw the
-    -- former title overlay, item-count circle, or corner masks on top.
+    -- Disable the older physical-folder paint hook so it cannot redraw its
+    -- title overlay, item-count circle, border, or corner masks over this tile.
     item._folder_frame_dimen = nil
     item._folder_image_size = nil
     item._foldercover_processed = true
@@ -382,10 +393,10 @@ local function patchMosaic()
     if not MosaicMenuItem then
         return false, "Could not find Cover Grid item class"
     end
-    if MosaicMenuItem._burrow_unified_directory_covers then
+    if MosaicMenuItem._burrow_physical_folder_consistency then
         return true
     end
-    MosaicMenuItem._burrow_unified_directory_covers = true
+    MosaicMenuItem._burrow_physical_folder_consistency = true
 
     local original_init = MosaicMenuItem.init
     function MosaicMenuItem:init(...)
@@ -398,9 +409,9 @@ local function patchMosaic()
     function MosaicMenuItem:update(...)
         local result = original_update(self, ...)
         removeSeriesBadge(self)
-        local ok, err = pcall(rebuildMosaicDirectory, self)
+        local ok, err = pcall(rebuildMosaicPhysicalFolder, self)
         if not ok then
-            logger.warn(burrow_debug.logprefix, "Could not unify Cover Grid folder", err)
+            logger.warn(burrow_debug.logprefix, "Could not restyle physical Cover Grid folder", err)
         end
         return result
     end
@@ -426,14 +437,11 @@ local function patchList()
         local result = original_update(self, ...)
         local ok, err = pcall(rebuildListDirectory, self)
         if not ok then
-            logger.warn(burrow_debug.logprefix, "Could not unify Cover List folder", err)
+            logger.warn(burrow_debug.logprefix, "Could not restyle Cover List folder", err)
         end
         return result
     end
 
-    -- Also restyle every completed row after the page builder runs. This catches
-    -- list items that were created before the class wrapper was installed or
-    -- rebuilt through a cached menu path.
     local original_build = ListMenu._updateItemsBuildUI
     function ListMenu:_updateItemsBuildUI(...)
         local result = original_build(self, ...)
@@ -515,7 +523,7 @@ function Module.apply(Burrow)
     Module.applied = true
     logger.info(
         burrow_debug.logprefix,
-        "Unified folder and automatic-series cover styling loaded"
+        "Physical-folder and Cover List consistency styling loaded"
     )
     return true
 end
