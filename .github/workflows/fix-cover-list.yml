@@ -1,0 +1,185 @@
+name: Apply Cover List folder styling fix
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/fix-cover-list.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Update Cover List folder and series artwork
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          list_path = Path('plugins/burrow.koplugin/listmenu.lua')
+          text = list_path.read_text(encoding='utf-8')
+          old = '''        local folder_cover
+        -- add cover-art sized icon for folders
+        if self.do_cover_image and is_pathchooser == false then
+            local subfolder_cover_image
+            -- check for folder image
+            subfolder_cover_image = burrow_util.getFolderCover(self.filepath, max_img_w * 0.82, max_img_h, BurrowMigration.folderCoverPath(self.entry))
+            -- check for books with covers in the subfolder
+            if subfolder_cover_image == nil and not BookInfoManager:getSetting("disable_auto_foldercovers") then
+                subfolder_cover_image = burrow_util.getSubfolderCoverImages(self.filepath, max_img_w, max_img_h)
+            end
+            -- use stock folder icon
+            local stock_image = plugin_dir .. "/resources/folder.svg"
+            if subfolder_cover_image == nil then
+                local _, _, scale_factor = BookInfoManager.getCachedCoverSize(250, 500, max_img_w, max_img_h)
+                subfolder_cover_image = ImageWidget:new {
+                    file = stock_image,
+                    alpha = true,
+                    scale_factor = scale_factor,
+                    width = max_img_w,
+                    height = max_img_h,
+                    original_in_nightmode = false,
+                }
+            end
+
+            folder_cover = CenterContainer:new {
+                dimen = Geom:new { w = dimen.h, h = dimen.h },
+                margin = 0,
+                padding = padding_size,
+                color = Blitbuffer.COLOR_WHITE,
+                dim = self.file_deleted,
+                subfolder_cover_image,
+            }
+            self.menu._has_cover_images = true
+            self._has_cover_image = true
+'''
+          new = '''        local folder_cover
+        -- Use the same full cover allocation and rounded frame as book covers.
+        -- The earlier list layout requested custom folder and series artwork at
+        -- only 82% width and placed it directly in the row without a rounded
+        -- frame, making these entries visibly smaller and square-cornered.
+        if self.do_cover_image and is_pathchooser == false then
+            local border_total = Size.border.thin * 2
+            local cover_art_w = math.max(1, max_img_w - border_total)
+            local cover_art_h = math.max(1, max_img_h - border_total)
+            local subfolder_cover_image
+
+            -- Check for a real folder cover or generated automatic-series cover.
+            subfolder_cover_image = burrow_util.getFolderCover(
+                self.filepath,
+                cover_art_w,
+                cover_art_h,
+                BurrowMigration.folderCoverPath(self.entry)
+            )
+            -- Check for books with covers in the subfolder.
+            if subfolder_cover_image == nil and not BookInfoManager:getSetting("disable_auto_foldercovers") then
+                subfolder_cover_image = burrow_util.getSubfolderCoverImages(
+                    self.filepath,
+                    cover_art_w,
+                    cover_art_h
+                )
+            end
+            -- Use the stock folder icon when no cover art is available.
+            local stock_image = plugin_dir .. "/resources/folder.svg"
+            if subfolder_cover_image == nil then
+                local _, _, scale_factor = BookInfoManager.getCachedCoverSize(
+                    250,
+                    500,
+                    cover_art_w,
+                    cover_art_h
+                )
+                subfolder_cover_image = ImageWidget:new {
+                    file = stock_image,
+                    alpha = true,
+                    scale_factor = scale_factor,
+                    width = cover_art_w,
+                    height = cover_art_h,
+                    original_in_nightmode = false,
+                }
+            end
+
+            local rounded_folder_cover = FrameContainer:new {
+                width = cover_art_w + border_total,
+                height = cover_art_h + border_total,
+                margin = 0,
+                padding = 0,
+                radius = Size.radius.default,
+                bordersize = Size.border.thin,
+                color = Blitbuffer.COLOR_GRAY_3,
+                background = Blitbuffer.COLOR_GRAY_3,
+                subfolder_cover_image,
+            }
+
+            folder_cover = CenterContainer:new {
+                dimen = Geom:new { w = dimen.h, h = dimen.h },
+                margin = 0,
+                padding = padding_size,
+                color = Blitbuffer.COLOR_WHITE,
+                dim = self.file_deleted,
+                rounded_folder_cover,
+            }
+            self.menu._has_cover_images = true
+            self._has_cover_image = true
+'''
+          if text.count(old) != 1:
+              raise SystemExit('Expected Cover List folder block was not found exactly once')
+          list_path.write_text(text.replace(old, new), encoding='utf-8')
+
+          version_path = Path('plugins/burrow.koplugin/burrow_version.lua')
+          version = version_path.read_text(encoding='utf-8')
+          version = version.replace('VERSION = "0.3.0-beta"', 'VERSION = "0.3.1-beta"', 1)
+          version = version.replace('DISPLAY_VERSION = "0.3.0 beta"', 'DISPLAY_VERSION = "0.3.1 beta"', 1)
+          version_path.write_text(version, encoding='utf-8')
+
+          install_path = Path('INSTALL.txt')
+          install = install_path.read_text(encoding='utf-8')
+          install = install.replace('BURROW 0.3.0 BETA INSTALLATION', 'BURROW 0.3.1 BETA INSTALLATION', 1)
+          install_path.write_text(install, encoding='utf-8')
+
+          changelog_path = Path('CHANGELOG.md')
+          changelog = changelog_path.read_text(encoding='utf-8')
+          marker = '## [Unreleased]\n\n'
+          release = '''## [0.3.1-beta] - 2026-08-05
+
+### Fixed
+
+- Made folder and automatic-series artwork use the full available cover size in Cover List
+- Applied the same rounded frame to folder and series artwork used for book covers in Cover List
+
+'''
+          if marker not in changelog:
+              raise SystemExit('Unreleased changelog marker not found')
+          changelog = changelog.replace(marker, marker + release, 1)
+          changelog = changelog.replace(
+              '[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.3.0-beta...HEAD',
+              '[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.3.1-beta...HEAD\n[0.3.1-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.1-beta',
+              1,
+          )
+          changelog_path.write_text(changelog, encoding='utf-8')
+          PY
+
+          rm .github/workflows/fix-cover-list.yml
+
+          grep -q 'VERSION = "0.3.1-beta"' plugins/burrow.koplugin/burrow_version.lua
+          grep -q 'radius = Size.radius.default' plugins/burrow.koplugin/listmenu.lua
+          grep -q 'cover_art_w' plugins/burrow.koplugin/listmenu.lua
+
+      - name: Commit fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add plugins/burrow.koplugin/listmenu.lua plugins/burrow.koplugin/burrow_version.lua INSTALL.txt CHANGELOG.md .github/workflows/fix-cover-list.yml
+          git commit -m "Fix folder covers in Cover List"
+          git push
