@@ -12,11 +12,18 @@ local CenterContainer = require("ui/widget/container/centercontainer")
 local Font = require("ui/font")
 local FrameContainer = require("ui/widget/container/framecontainer")
 local Geom = require("ui/geometry")
+local HorizontalGroup = require("ui/widget/horizontalgroup")
+local HorizontalSpan = require("ui/widget/horizontalspan")
+local IconWidget = require("ui/widget/iconwidget")
 local ImageWidget = require("ui/widget/imagewidget")
+local LeftContainer = require("ui/widget/container/leftcontainer")
 local OverlapGroup = require("ui/widget/overlapgroup")
 local Screen = require("device").screen
 local Size = require("ui/size")
 local TextWidget = require("ui/widget/textwidget")
+local TopContainer = require("ui/widget/container/topcontainer")
+local VerticalGroup = require("ui/widget/verticalgroup")
+local VerticalSpan = require("ui/widget/verticalspan")
 local BookInfoManager = require("bookinfomanager")
 local burrow_debug = require("burrow_debug")
 local burrow_util = require("burrow_util")
@@ -35,6 +42,8 @@ local CAPTION_GAP = Screen:scaleBySize(3)
 local CAPTION_VERTICAL_RESERVE = 2 * (CAPTION_HEIGHT + CAPTION_GAP)
 local CAPTION_SIDE_MARGIN = Screen:scaleBySize(4)
 local LIST_PADDING = Screen:scaleBySize(4)
+local DIRECTORY_MARKER_SIZE = Screen:scaleBySize(26)
+local DIRECTORY_MARKER_INSET = Screen:scaleBySize(6)
 
 local function entryIsFile(entry)
     return entry and (entry.is_file or entry.file) and true or false
@@ -77,11 +86,17 @@ local function entryIsSeries(item)
     )
 end
 
+local function entryIsReturnToLibrary(entry)
+    return entry and (
+        entry.is_return_to_library == true
+        or entry._burrow_return_tile_token ~= nil
+    )
+end
+
 local function entryIsNavigation(entry)
     return entry and (
         entry.is_go_up == true
-        or entry.is_return_to_library == true
-        or entry._burrow_return_tile_token ~= nil
+        or entryIsReturnToLibrary(entry)
     )
 end
 
@@ -246,6 +261,33 @@ local function cleanTitle(item)
     return text
 end
 
+local function directoryMarkerLayer(width, height)
+    local marker_size = math.min(
+        DIRECTORY_MARKER_SIZE,
+        math.max(Screen:scaleBySize(12), math.floor(math.min(width, height) * 0.24))
+    )
+    local marker = IconWidget:new {
+        icon = "series.folder",
+        alpha = true,
+        width = marker_size,
+        height = marker_size,
+    }
+
+    return TopContainer:new {
+        dimen = Geom:new { w = width, h = height },
+        LeftContainer:new {
+            dimen = Geom:new { w = width, h = height },
+            VerticalGroup:new {
+                VerticalSpan:new { width = DIRECTORY_MARKER_INSET },
+                HorizontalGroup:new {
+                    HorizontalSpan:new { width = DIRECTORY_MARKER_INSET },
+                    marker,
+                },
+            },
+        },
+    }
+end
+
 local function rebuildMosaicPhysicalFolder(item)
     local entry = item and item.entry
     if not entry
@@ -267,6 +309,13 @@ local function rebuildMosaicPhysicalFolder(item)
         item.height - CAPTION_VERTICAL_RESERVE
     )
     local cover = roundedDirectoryCover(item, item.width, max_cover_h)
+    local cover_size = cover:getSize()
+    local cover_dimen = Geom:new { w = cover_size.w, h = cover_size.h }
+    local marked_cover = OverlapGroup:new {
+        dimen = cover_dimen,
+        cover,
+        directoryMarkerLayer(cover_size.w, cover_size.h),
+    }
     local caption = TextWidget:new {
         text = BD.auto(cleanTitle(item)),
         face = Font:getFace("cfont", CAPTION_FONT_SIZE),
@@ -282,7 +331,7 @@ local function rebuildMosaicPhysicalFolder(item)
         dimen = tile_dimen,
         CenterContainer:new {
             dimen = tile_dimen,
-            cover,
+            marked_cover,
         },
         BottomContainer:new {
             dimen = tile_dimen,
@@ -320,20 +369,89 @@ local function findListFolderSlot(item)
     end
 end
 
+local function replaceListArtwork(item, replacement, marker)
+    local horizontal, index = findListFolderSlot(item)
+    if not horizontal then
+        logger.warn(burrow_debug.logprefix, "Could not locate Cover List folder slot")
+        return false
+    end
+
+    local previous = horizontal[index]
+    horizontal[index] = replacement
+    if previous and previous.free then
+        previous:free(true)
+    end
+
+    replacement[marker] = true
+    if item.menu then
+        item.menu._has_cover_images = true
+    end
+    item._has_cover_image = true
+    return true
+end
+
+local function rebuildListReturnToLibrary(item)
+    local row_height = math.max(
+        1,
+        tonumber(item.height)
+            or (item.dimen and tonumber(item.dimen.h))
+            or 1
+    )
+    local frame_size = math.max(1, row_height - 2 * LIST_PADDING)
+    local icon_padding = math.max(
+        Screen:scaleBySize(3),
+        math.floor(frame_size * 0.17)
+    )
+    local icon_size = math.max(
+        Screen:scaleBySize(12),
+        frame_size - 2 * icon_padding
+    )
+    local replacement = CenterContainer:new {
+        dimen = Geom:new { w = row_height, h = row_height },
+        margin = 0,
+        padding = LIST_PADDING,
+        color = Blitbuffer.COLOR_WHITE,
+        FrameContainer:new {
+            width = frame_size,
+            height = frame_size,
+            margin = 0,
+            padding = icon_padding,
+            bordersize = Size.border.thin,
+            radius = Size.radius.default,
+            color = Blitbuffer.COLOR_GRAY_3,
+            background = Blitbuffer.COLOR_WHITE,
+            IconWidget:new {
+                icon = "return.library",
+                width = icon_size,
+                height = icon_size,
+                alpha = false,
+                file_do_cache = false,
+                scale_factor = 0,
+            },
+        },
+    }
+    return replaceListArtwork(
+        item,
+        replacement,
+        "_burrow_return_to_library_list_icon"
+    )
+end
+
 local function rebuildListDirectory(item)
     local entry = item and item.entry
     if not entry
         or entryIsFile(entry)
-        or entryIsNavigation(entry)
         or not item.do_cover_image
         or burrow_util.isPathChooser(item)
     then
         return
     end
 
-    local horizontal, index = findListFolderSlot(item)
-    if not horizontal then
-        logger.warn(burrow_debug.logprefix, "Could not locate Cover List folder slot")
+    if entryIsReturnToLibrary(entry) then
+        rebuildListReturnToLibrary(item)
+        return
+    end
+    if entryIsNavigation(entry) then
         return
     end
 
@@ -352,18 +470,11 @@ local function rebuildListDirectory(item)
         dim = item.file_deleted,
         roundedDirectoryCover(item, max_cover, max_cover),
     }
-    replacement._burrow_unified_list_folder = true
-
-    local previous = horizontal[index]
-    horizontal[index] = replacement
-    if previous and previous.free then
-        previous:free(true)
-    end
-
-    if item.menu then
-        item.menu._has_cover_images = true
-    end
-    item._has_cover_image = true
+    replaceListArtwork(
+        item,
+        replacement,
+        "_burrow_unified_list_folder"
+    )
 end
 
 local function removeSeriesBadge(item)
@@ -523,7 +634,7 @@ function Module.apply(Burrow)
     Module.applied = true
     logger.info(
         burrow_debug.logprefix,
-        "Physical-folder and Cover List consistency styling loaded"
+        "Physical-folder markers and Cover List navigation styling loaded"
     )
     return true
 end
