@@ -4,6 +4,15 @@ All notable changes to Burrow will be documented here.
 
 ## [Unreleased]
 
+## [0.3.4-beta] - 2026-08-05
+
+### Fixed
+
+- Stopped the physical-folder consistency layer from rebuilding automatic-series tiles
+- Removed duplicated automatic-series covers and doubled series captions
+- Reduced physical-folder covers to the same caption-reserved height used by normal book covers
+- Kept automatic-series Cover Grid rendering on its native Burrow path while retaining rounded full-size folder artwork in Cover List
+
 ## [0.3.3-beta] - 2026-08-05
 
 ### Fixed
@@ -113,7 +122,8 @@ All notable changes to Burrow will be documented here.
 
 - Initial unified Burrow library, Store, and reader-interface package
 
-[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.3.3-beta...HEAD
+[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.3.4-beta...HEAD
+[0.3.4-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.4-beta
 [0.3.3-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.3-beta
 [0.3.2-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.2-beta
 [0.3.1-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.1-beta
