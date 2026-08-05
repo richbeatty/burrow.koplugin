@@ -67,9 +67,5 @@ body:
           required: true
         - label: KOReader's built-in Cover Browser is disabled.
           required: true
-        - label: Standalone ProjectTitle and OPDS Plus plugins are disabled or removed.
-          required: true
-        - label: The old 2-burrow-bootstrap.lua patch is removed.
-          required: true
         - label: I removed private information from the report.
           required: true
