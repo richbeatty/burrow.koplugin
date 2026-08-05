@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: KOReader support
+    url: https://github.com/koreader/koreader/discussions
+    about: Use KOReader support for problems that also occur without Burrow enabled.
