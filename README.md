@@ -1,151 +1,95 @@
 # Burrow
 
+[![Release](https://img.shields.io/github/v/release/richbeatty/burrow.koplugin?include_prereleases&label=release)](https://github.com/richbeatty/burrow.koplugin/releases)
 [![Validate Burrow](https://github.com/richbeatty/burrow.koplugin/actions/workflows/validate.yml/badge.svg)](https://github.com/richbeatty/burrow.koplugin/actions/workflows/validate.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
-Burrow is a unified library, Store, and reader interface for KOReader. The current release candidate is **0.2.1 alpha**.
+**A library-first interface for KOReader.**
 
-Burrow is a plugin-only build. It loads its interface modules directly from `burrow.koplugin` and does not require a file in KOReader's `patches` folder.
+Burrow brings your local library, online catalogs, series navigation, and useful reader controls into one consistent, cover-forward experience.
 
-> Burrow is pre-release software. Back up the KOReader data folder before installing and keep a known-working Burrow package available for rollback.
+[Download Burrow](https://github.com/richbeatty/burrow.koplugin/releases) · [Report a bug](https://github.com/richbeatty/burrow.koplugin/issues/new?template=bug_report.yml) · [Request a feature](https://github.com/richbeatty/burrow.koplugin/issues/new?template=feature_request.yml)
+
+> Burrow is pre-release software. Back up your KOReader data folder before installing.
+
+## Screenshots
+
+| Library | Store | Reader |
+|:---:|:---:|:---:|
+| _Screenshot coming soon_ | _Screenshot coming soon_ | _Screenshot coming soon_ |
+
+<!--
+Suggested screenshot paths:
+- docs/screenshots/library.png
+- docs/screenshots/store.png
+- docs/screenshots/reader.png
+-->
+
+## Features
+
+### Library
+
+- Cover grid and cover list views
+- Automatic series folders
+- Rounded book, folder, and series covers
+- Reading percentage and numbered series badges
+- Adjustable cover size, spacing, and grids up to 8 by 8
+- Flexible top bar, hero card, page indicators, and optional labels
+
+### Store
+
+- Browse OPDS catalogs in list or cover-grid views
+- Download books directly into your library
+- Download queue available from every catalog
+- Book-format filtering that keeps cover images out of download choices
+- Store styling that matches the local library
+
+### Reader and controls
+
+- Rounded Quick Settings with optional KoSync Push and Pull actions
+- Independent reader status-bar margins and preset cycling
+- Reading-location return control
+- Rounded native top and in-reader menus
+- Light and dark mode-aware Burrow icons
 
 ## Compatibility
 
-Burrow requires **KOReader 2026.07.1 or newer** and was last tested with **KOReader 2026.07.1**. Newer releases and nightlies are allowed to load with a warning instead of being blocked. Versions older than the minimum, and builds explicitly listed as incompatible, are refused.
+Burrow requires **KOReader 2026.07.1 or newer** and was last tested with **KOReader 2026.07.1**. Newer releases and nightlies may show a compatibility warning while testing continues.
 
-Optional interface modules are loaded by feature group. A module that fails before application disables only that feature. A module that fails while applying is quarantined for the next restart, while the core library remains available.
-
-## Before installing
-
-Back up the KOReader data folder. Disable KOReader's built-in **Cover Browser** and remove or disable the legacy standalone plugins listed in [`REMOVE_OLD_FILES.txt`](REMOVE_OLD_FILES.txt).
-
-When upgrading from Burrow 0.1.x, also remove:
-
-```text
-patches/2-burrow-bootstrap.lua
-```
-
-The current plugin can tolerate that old bootstrap for one transitional startup, but it is no longer used and should be deleted.
+KOReader's built-in **Cover Browser** should be disabled before using Burrow.
 
 ## Installation
 
-1. Download or build the Burrow package.
-2. Delete the existing `plugins/burrow.koplugin` folder when upgrading.
-3. Delete the old `patches/2-burrow-bootstrap.lua` file when present.
-4. Extract the package into the root of the KOReader data folder.
-5. Confirm these paths exist:
+1. Open [Releases](https://github.com/richbeatty/burrow.koplugin/releases) and download the latest `Burrow-*.zip` file.
+2. Back up your KOReader data folder.
+3. When upgrading, replace the existing `plugins/burrow.koplugin` folder.
+4. Extract the ZIP into the root of the KOReader data folder.
+5. Confirm the final path includes:
 
 ```text
 plugins/burrow.koplugin/main.lua
-plugins/burrow.koplugin/_meta.lua
-plugins/burrow.koplugin/burrow_loader.lua
-plugins/burrow.koplugin/burrow_library.lua
 ```
 
 6. Fully close and restart KOReader.
 
-No Burrow file should be required in `koreader/patches/`.
+## Inspiration and credits
 
-See [`INSTALL.txt`](INSTALL.txt) for the compact installation checklist.
+Burrow began as a personal effort to make KOReader feel more like one connected bookshelf instead of several separate tools. It would not exist without the work shared by the wider KOReader community:
 
-## Included features
+- **[ProjectTitle](https://github.com/joshuacant/ProjectTitle)** by Joshua Cantrell was the cover-first library project that started this work.
+- **OPDS Plus** by greywolf1499 provided the foundation for a richer catalog and Store experience.
+- **[Zen UI](https://github.com/AnthonyGress/zen_ui.koplugin)** by Anthony Gress showed how a complete KOReader interface can feel focused, cohesive, and approachable.
+- **[qewer33/koreader-patches](https://github.com/qewer33/koreader-patches)** and **[sebdelsol/KOReader.patches](https://github.com/sebdelsol/KOReader.patches)** provided ideas and techniques for interface controls and reader status bars.
+- **[KOReader](https://github.com/koreader/koreader)** and its contributors make all of this possible.
 
-- Burrow library with cover grid and cover list modes
-- Embedded Store with list and grid catalog views
-- Download queue accessible from every Store catalog menu
-- Book-format filtering that excludes cover images such as JPEG and PNG
-- Home and Store footer with page indicators
-- Optional Home and Store labels, including automatic hiding when no catalogs are configured
-- Honey badger hero icon that follows KOReader light and dark mode
-- Flexible library top bar and hero card
-- Automatic virtual series folders
-- Rounded book, folder, and series covers
-- Bookmark-shaped reading percentage badges
-- Numbered series badges and series-folder icon
-- Independent cover gap and cover-size controls
-- Cover resizing for books, folders, and virtual series folders
-- Cover grid controls up to 8 by 8
-- Native KOReader top-menu tabs retained without widget replacement
-- Rounded Quick Settings with optional KoSync Push and Pull actions
-- Independent reader status-bar margins and preset cycling
-- Reading-location return control
-- Paint-only rounded menu sheets for the native top menu and in-reader bottom menu
+See [`NOTICE.md`](NOTICE.md) for licensing and source acknowledgements.
 
-## Plugin architecture
+## Status and contributing
 
-KOReader temporarily adds each plugin directory to `package.path` while sourcing its `main.lua`. Burrow uses that load phase to:
+Burrow is currently in alpha testing on real devices. Bug reports, focused fixes, documentation improvements, and additional device testing are welcome.
 
-- check compatibility and conflicts
-- install Burrow-owned icons
-- load early interface modules through explicit `apply()` entry points
-- define the Burrow plugin class
-- attach the guarded core library runtime from `burrow_library.lua`
-- preflight and apply optional feature modules by dependency group
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a pull request. Please remove passwords, tokens, private catalog URLs, personal paths, and book information from screenshots or logs.
 
-Bundled modules are idempotent and identify themselves through `package.loaded`. The core library runtime keeps one process-wide set of original KOReader method references, so sourcing the plugin class again does not wrap those methods again.
+## License
 
-## Settings and migration
-
-Burrow uses these persistent files:
-
-```text
-settings/burrow_library.sqlite3
-settings/burrow_store.lua
-```
-
-On first startup, Burrow imports compatible data from earlier standalone installations when the new files do not yet exist. Legacy source files are left untouched as backups. Existing library metadata, display preferences, Store catalogs, download history, and Store preferences should carry forward automatically.
-
-Keep the legacy files until Burrow has started successfully and the library and Store have been verified. Exact legacy names are documented in [`REMOVE_OLD_FILES.txt`](REMOVE_OLD_FILES.txt).
-
-Burrow release packages do not include personal catalog URLs, account credentials, device identifiers, reading history, home-folder paths, download-folder paths, or book files.
-
-## Repository layout
-
-```text
-plugins/burrow.koplugin/   Burrow plugin source
-scripts/package.sh         Reproducible release packaging
-.github/workflows/         Automated syntax, privacy, and package checks
-```
-
-The repository keeps the KOReader installation layout so release packages can be extracted directly into the KOReader data folder.
-
-## Building a package
-
-On Linux, macOS, or a compatible shell:
-
-```bash
-bash scripts/package.sh
-```
-
-The generated ZIP and SHA-256 checksum are placed in `dist/`. A fresh `FILES.sha256` manifest is generated inside the ZIP.
-
-GitHub Actions also builds the package when a version tag beginning with `v` is pushed or when the packaging workflow is run manually.
-
-## Reporting problems
-
-Use the repository's bug-report form and include the Burrow version, KOReader version, device, exact reproduction steps, and the relevant portion of `crash.log`.
-
-Before posting logs, remove passwords, tokens, private catalog URLs, personal paths, and book information. See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`SECURITY.md`](SECURITY.md).
-
-## Fonts and icons
-
-Burrow does not bundle font files. It uses KOReader's registered UI font aliases.
-
-Burrow bundles every icon required by its custom features. Burrow-owned icon names are refreshed during upgrades. Generic KOReader names are copied only when missing so existing themes and user customizations are not overwritten.
-
-## License and acknowledgements
-
-Burrow is distributed under GNU AGPL v3. See [`LICENSE`](LICENSE) and [`NOTICE.md`](NOTICE.md) for source acknowledgements and license details.
-
-Burrow includes and modifies work from ProjectTitle, OPDS Plus, KOReader, and credited community patches. Burrow is not affiliated with or endorsed by those upstream projects or contributors.
-
-## Development status
-
-Burrow remains alpha software while real-device testing continues. The current public-beta threshold is:
-
-- no known startup or data-loss bugs
-- clean installation and upgrade paths
-- reliable series navigation and reader return behavior
-- working Store downloads across multiple catalogs
-- successful degraded-mode behavior when an optional module fails
-- documented rollback and compatibility guidance
+Burrow is distributed under the [GNU Affero General Public License v3](LICENSE).
