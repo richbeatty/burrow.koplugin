@@ -12,6 +12,7 @@ local burrow_debug = require("burrow_debug")
 local BurrowMigration = require("burrow_migration")
 local BurrowCompatibility = require("burrow_compatibility")
 local BurrowLoader = require("burrow_loader")
+local BurrowSettings = require("burrow_settings")
 
 -- Keep Burrow visible in Plugin Management when a critical prerequisite fails.
 local function makeUnavailablePlugin(reason)
@@ -107,6 +108,30 @@ end
 -- Optional visual modules are preflighted and applied by feature group. A
 -- failed group is disabled without preventing unrelated Burrow features.
 BurrowLoader:applyInstanceModules(Burrow)
+
+-- Cover List has its own directory renderer, separate from the mosaic widgets
+-- managed by the normal visual patch group. Apply its full-size rounded folder
+-- treatment only when Burrow's library appearance features are enabled.
+if BurrowSettings:isFeatureEnabled("library_visuals") then
+    local module_ok, module_or_error = pcall(require, "burrow_list_folder_covers")
+    if module_ok and type(module_or_error) == "table" and type(module_or_error.apply) == "function" then
+        local apply_ok, applied, apply_error = pcall(module_or_error.apply)
+        if not apply_ok or applied == false then
+            logger.warn(
+                burrow_debug.logprefix,
+                "Cover List folder styling could not be applied",
+                apply_ok and apply_error or applied
+            )
+        end
+    else
+        logger.warn(
+            burrow_debug.logprefix,
+            "Cover List folder styling could not be loaded",
+            module_or_error
+        )
+    end
+end
+
 Burrow._loader_errors = BurrowLoader:getErrors()
 Burrow._loader_statuses = BurrowLoader:getStatuses()
 Burrow._degraded_features = BurrowLoader:getDegradedFeatures()
