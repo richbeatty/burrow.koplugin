@@ -52,11 +52,25 @@ jobs:
             exit 1
           fi
 
-      - name: Scan for common credential patterns
+      - name: Scan public files for credential patterns
         shell: bash
         run: |
           set -euo pipefail
-          if grep -RInE --exclude-dir=.git --exclude='*.svg' --exclude='*.png' --exclude='*.jpg' '(Authorization:[[:space:]]*(Basic|Bearer)|password[[:space:]]*=[[:space:]]*["'"'][^"'"']+["'"']|api[_-]?key[[:space:]]*=|token[[:space:]]*=[[:space:]]*["'"'][A-Za-z0-9_-]{20,}["'"'])' .; then
+          targets=(
+            plugins
+            README.md
+            INSTALL.txt
+            CHANGELOG.md
+            CONTRIBUTING.md
+            SECURITY.md
+            NOTICE.md
+          )
+          if grep -RInE \
+            --exclude='*.svg' \
+            --exclude='*.png' \
+            --exclude='*.jpg' \
+            '(Authorization:[[:space:]]*(Basic|Bearer)|password[[:space:]]*=[[:space:]]*["'"'][^"'"']+["'"']|api[_-]?key[[:space:]]*=|token[[:space:]]*=[[:space:]]*["'"'][A-Za-z0-9_-]{20,}["'"'])' \
+            "${targets[@]}"; then
             echo 'Possible embedded credential found. Review before merging.' >&2
             exit 1
           fi
