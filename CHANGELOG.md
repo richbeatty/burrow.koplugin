@@ -10,6 +10,10 @@ All notable changes to Burrow will be documented here.
 
 - Extended the Home and Store footer to nested manual folders inside the configured library
 
+### Changed
+
+- Promoted the device-tested 0.3.6 build to public beta
+
 ### Fixed
 
 - Anchored the folder and collection marker to the upper-left corner of the cover
