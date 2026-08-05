@@ -1,6 +1,5 @@
 --[[
     Burrow provides a unified library, Store, and reader interface for KOReader.
-    The package is plugin-only and does not require a userpatch.
 --]]
 
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
@@ -9,7 +8,6 @@ local InfoMessage = require("ui/widget/infomessage")
 local logger = require("logger")
 local _ = require("l10n.gettext")
 local burrow_util = require("burrow_util")
-local util = require("util")
 local burrow_debug = require("burrow_debug")
 local BurrowMigration = require("burrow_migration")
 local BurrowCompatibility = require("burrow_compatibility")
@@ -59,8 +57,7 @@ local function makeUnavailablePlugin(reason)
     return BurrowUnavailable
 end
 
-local data_dir = burrow_util.koreader_dir
-logger.info(burrow_debug.logprefix, "Checking requirements in '" .. data_dir .. "'")
+logger.info(burrow_debug.logprefix, "Checking Burrow requirements")
 
 local plugins_disabled = G_reader_settings:readSetting("plugins_disabled")
 if type(plugins_disabled) ~= "table" then
@@ -71,26 +68,6 @@ if plugins_disabled.coverbrowser == nil or plugins_disabled.coverbrowser == fals
     return makeUnavailablePlugin(
         _("KOReader's built-in Cover Browser is enabled. Disable Cover Browser in Plugin Management, then restart KOReader.")
     )
-end
-
-local legacy_library_plugin_path = data_dir .. "/plugins/projecttitle.koplugin"
-if util.directoryExists(legacy_library_plugin_path) and not plugins_disabled.projecttitle then
-    return makeUnavailablePlugin(
-        _("A separate ProjectTitle installation is still enabled. Disable or remove projecttitle.koplugin, then restart KOReader.")
-    )
-end
-
-local legacy_store_plugin_paths = {
-    data_dir .. "/plugins/opds_plus.koplugin",
-    data_dir .. "/plugins/opdsplus.koplugin",
-}
-for _, path in ipairs(legacy_store_plugin_paths) do
-    local name = path:match("/([^/]+)%.koplugin$")
-    if util.directoryExists(path) and not plugins_disabled[name] then
-        return makeUnavailablePlugin(
-            _("A separate OPDS Plus installation is still enabled. Disable or remove the legacy Store plugin, then restart KOReader.")
-        )
-    end
 end
 
 if not burrow_util.installIcons() then
@@ -118,8 +95,8 @@ local Burrow = WidgetContainer:extend {
 Burrow._compatibility = compatibility
 Burrow._compatibility_notice = compatibility.warning
 
--- The ProjectTitle-derived runtime is now a guarded critical module instead of
--- a large block of class patches in main.lua.
+-- The core library runtime is kept in a guarded module so KOReader methods are
+-- not wrapped more than once.
 local core_ok, core_error = BurrowLoader:applyCoreModules(Burrow)
 if not core_ok then
     return makeUnavailablePlugin(
@@ -133,7 +110,6 @@ BurrowLoader:applyInstanceModules(Burrow)
 Burrow._loader_errors = BurrowLoader:getErrors()
 Burrow._loader_statuses = BurrowLoader:getStatuses()
 Burrow._degraded_features = BurrowLoader:getDegradedFeatures()
-Burrow._plugin_only = true
 
 logger.info(
     burrow_debug.logprefix,
