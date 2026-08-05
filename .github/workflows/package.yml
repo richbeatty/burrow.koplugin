@@ -40,11 +40,6 @@ jobs:
           test -n "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
-          if [[ "$version" =~ -(alpha|beta|rc) ]]; then
-            echo "prerelease=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Build release archive
         shell: bash
@@ -77,7 +72,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
-          IS_PRERELEASE: ${{ steps.release.outputs.prerelease }}
         shell: bash
         run: |
           set -euo pipefail
@@ -85,28 +79,21 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # Pre-release tags follow the current tested source while alpha/beta
-          # packages are being refined. Stable version tags remain immutable.
-          if [[ "$IS_PRERELEASE" == "true" ]]; then
-            git tag -fa "$RELEASE_TAG" "$GITHUB_SHA" -m "Burrow $RELEASE_VERSION"
-            git push origin "refs/tags/$RELEASE_TAG" --force
-          elif ! git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
-            git tag -a "$RELEASE_TAG" "$GITHUB_SHA" -m "Burrow $RELEASE_VERSION"
-            git push origin "refs/tags/$RELEASE_TAG"
-          fi
+          # During active alpha development, keep the version tag aligned with
+          # the source used to build the downloadable package.
+          git tag -fa "$RELEASE_TAG" "$GITHUB_SHA" -m "Burrow $RELEASE_VERSION"
+          git push origin "refs/tags/$RELEASE_TAG" --force
 
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            if [[ "$IS_PRERELEASE" == "true" ]]; then
-              gh release create "$RELEASE_TAG" \
-                --title "Burrow $RELEASE_VERSION" \
-                --generate-notes \
-                --prerelease
-            else
-              gh release create "$RELEASE_TAG" \
-                --title "Burrow $RELEASE_VERSION" \
-                --generate-notes \
-                --latest
-            fi
+            gh release create "$RELEASE_TAG" \
+              --title "Burrow $RELEASE_VERSION" \
+              --generate-notes \
+              --latest
+          else
+            gh release edit "$RELEASE_TAG" \
+              --title "Burrow $RELEASE_VERSION" \
+              --latest \
+              --prerelease=false
           fi
 
           gh release upload "$RELEASE_TAG" \
