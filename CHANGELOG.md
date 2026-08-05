@@ -10,6 +10,13 @@ All notable changes to Burrow will be documented here.
 - Public beta screenshots and documentation polish
 - Additional automated regression coverage
 
+## [0.2.2-alpha] - 2026-08-05
+
+### Fixed
+
+- Made cover-size values above 100% render at the requested scale instead of being capped by the original tile dimensions
+- Corrected the capitalization of the Reading Controls heading
+
 ## [0.2.1-alpha] - 2026-08-05
 
 ### Added
@@ -64,6 +71,7 @@ All notable changes to Burrow will be documented here.
 
 - Initial unified Burrow library, Store, and reader-interface package
 
-[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.2.1-alpha...HEAD
+[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.2.2-alpha...HEAD
+[0.2.2-alpha]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.2.2-alpha
 [0.2.1-alpha]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.2.1-alpha
 [0.2.0-alpha]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.2.0-alpha
