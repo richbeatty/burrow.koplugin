@@ -1,0 +1,24 @@
+# Editor and OS files
+*.swp
+*.bak
+*~
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Runtime and local data
+settings/
+cache/
+*.log
+*.sqlite3
+
+# Build output
+/dist/
+/tmp/
+__pycache__/
+*.pyc
+
+# Generated archives
+Burrow-*.zip
+Burrow-*.sha256
