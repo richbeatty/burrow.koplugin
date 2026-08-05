@@ -46,9 +46,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          forbidden='(^|/)(settings|cache|history|books)(/|$)|\.sqlite3?$|crash\.log$|settings_reader\.lua$|opdsplus\.lua$|burrow_store\.lua$|2-burrow-bootstrap\.lua$|\.(ttf|otf|ttc)$'
+          forbidden='(^|/)(settings|cache|history|books)(/|$)|\.sqlite3?$|crash\.log$|settings_reader\.lua$|burrow_store\.lua$|\.(ttf|otf|ttc)$'
           if find . -type f -not -path './.git/*' | grep -E "$forbidden"; then
-            echo 'Forbidden runtime, personal, legacy, or font file found.' >&2
+            echo 'Forbidden runtime, personal, or font file found.' >&2
             exit 1
           fi
 
