@@ -16,14 +16,7 @@ Burrow brings your local library, online catalogs, series navigation, and useful
 
 | Library | Store | Reader |
 |:---:|:---:|:---:|
-| docs/screenshots/library.png | _Screenshot coming soon_ | _Screenshot coming soon_ |
-
-<!--
-Suggested screenshot paths:
-- docs/screenshots/library.png
-- docs/screenshots/store.png
-- docs/screenshots/reader.png
--->
+| <img src="docs/screenshots/library.png.png" alt="Burrow library" width="300"> | <img src="docs/screenshots/store.png.png" alt="Burrow Store" width="300"> | <img src="docs/screenshots/reader.png.png" alt="Burrow Reading Controls" width="300"> |
 
 ## Features
 
