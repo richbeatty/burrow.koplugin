@@ -1,0 +1,39 @@
+name: Feature request
+description: Suggest a focused improvement for Burrow
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Explain the reading or library workflow that is difficult today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe how the feature should work from a user's perspective.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Mention existing KOReader features, plugins, or simpler approaches you have tried.
+  - type: input
+    id: device
+    attributes:
+      label: Device or screen type
+      description: Include this when the request is related to layout, touch targets, or e-ink behavior.
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: This request is related to Burrow's library, Store, or reader interface.
+          required: true
+        - label: This request does not require bundling private data, paid services, or copyrighted book files.
+          required: true
