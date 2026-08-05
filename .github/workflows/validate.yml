@@ -52,25 +52,57 @@ jobs:
             exit 1
           fi
 
-      - name: Scan public files for credential patterns
-        shell: bash
+      - name: Scan public files for embedded credentials
+        shell: python
         run: |
-          set -euo pipefail
-          targets=(
-            plugins
-            README.md
-            INSTALL.txt
-            CHANGELOG.md
-            CONTRIBUTING.md
-            SECURITY.md
-            NOTICE.md
-          )
-          if grep -RInE \
-            --exclude='*.svg' \
-            --exclude='*.png' \
-            --exclude='*.jpg' \
-            '(Authorization:[[:space:]]*(Basic|Bearer)|password[[:space:]]*=[[:space:]]*["'"'][^"'"']+["'"']|api[_-]?key[[:space:]]*=|token[[:space:]]*=[[:space:]]*["'"'][A-Za-z0-9_-]{20,}["'"'])' \
-            "${targets[@]}"; then
-            echo 'Possible embedded credential found. Review before merging.' >&2
-            exit 1
-          fi
+          from pathlib import Path
+          import re
+          import sys
+
+          roots = [
+              Path("plugins"),
+              Path("README.md"),
+              Path("INSTALL.txt"),
+              Path("CHANGELOG.md"),
+              Path("CONTRIBUTING.md"),
+              Path("SECURITY.md"),
+              Path("NOTICE.md"),
+          ]
+          ignored_suffixes = {".svg", ".png", ".jpg", ".jpeg", ".gif", ".zip"}
+          patterns = [
+              ("authorization header", re.compile(
+                  r"Authorization:\s*(?:Basic|Bearer)\s+[A-Za-z0-9+/_.=-]{12,}",
+                  re.IGNORECASE,
+              )),
+              ("password assignment", re.compile(
+                  r"\bpassword\s*=\s*[\"'][^\"']+[\"']",
+                  re.IGNORECASE,
+              )),
+              ("API key assignment", re.compile(
+                  r"\bapi[_-]?key\s*=\s*[\"'][A-Za-z0-9_-]{12,}[\"']",
+                  re.IGNORECASE,
+              )),
+              ("known token format", re.compile(
+                  r"\b(?:ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{20,}|AKIA[0-9A-Z]{16})\b"
+              )),
+              ("private key", re.compile(
+                  r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"
+              )),
+          ]
+
+          findings = []
+          for root in roots:
+              if not root.exists():
+                  continue
+              files = root.rglob("*") if root.is_dir() else [root]
+              for path in files:
+                  if not path.is_file() or path.suffix.lower() in ignored_suffixes:
+                      continue
+                  text = path.read_text(encoding="utf-8", errors="ignore")
+                  for label, pattern in patterns:
+                      if pattern.search(text):
+                          findings.append(f"{path}: possible {label}")
+
+          if findings:
+              print("\n".join(findings))
+              sys.exit("Possible embedded credential found. Review before merging.")
