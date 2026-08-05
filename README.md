@@ -47,7 +47,7 @@ Burrow brings your local library, online catalogs, series navigation, and useful
 
 ## Compatibility
 
-Burrow requires **KOReader 2026.07.1 or newer** and was last tested with **KOReader 2026.07.1**. Newer releases and nightlies may show a compatibility warning while testing continues.
+Burrow requires **KOReader 2026.07.1 or newer** and has been tested successfully with **KOReader 2026.07.2**. Newer releases and nightlies may show a compatibility warning while testing continues.
 
 KOReader's built-in **Cover Browser** should be disabled before using Burrow.
 

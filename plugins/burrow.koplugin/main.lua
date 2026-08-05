@@ -11,7 +11,6 @@ local burrow_util = require("burrow_util")
 local burrow_debug = require("burrow_debug")
 local BurrowMigration = require("burrow_migration")
 local BurrowCompatibility = require("burrow_compatibility")
-require("burrow_ui_text")
 local BurrowLoader = require("burrow_loader")
 
 -- Keep Burrow visible in Plugin Management when a critical prerequisite fails.

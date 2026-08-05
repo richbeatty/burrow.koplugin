@@ -408,7 +408,7 @@ local function createQuickSettingsPanel(touch_menu)
 
     local panel_content = VerticalGroup:new{ align = "center" }
     table.insert(panel_content, TextWidget:new{
-        text = isReaderContext() and _("Reading controls") or _("Quick settings"),
+        text = isReaderContext() and _("Reading Controls") or _("Quick Settings"),
         face = Font:getFace("smallinfofont", 20),
         bold = true,
         max_width = inner_width,

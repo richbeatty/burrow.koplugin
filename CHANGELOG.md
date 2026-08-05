@@ -4,6 +4,14 @@ All notable changes to Burrow will be documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Updated the last-tested KOReader version to 2026.07.2
+
+### Fixed
+
+- Capitalized the Reading Controls and Quick Settings panel titles
+
 ### Planned
 
 - Wider real-device testing across Android and dedicated e-ink devices

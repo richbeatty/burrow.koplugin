@@ -10,5 +10,5 @@ BURROW 0.2.2 ALPHA INSTALLATION
 7. Fully close and restart KOReader.
 
 Minimum KOReader version: 2026.07.1
-Last tested KOReader version: 2026.07.1
+Last tested KOReader version: 2026.07.2
 Newer releases are allowed with a compatibility warning.
