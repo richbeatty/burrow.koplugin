@@ -1,13 +1,23 @@
-name: Package Burrow
+name: Build and publish Burrow
 
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
+    paths:
+      - 'plugins/burrow.koplugin/burrow_version.lua'
+      - 'scripts/package.sh'
+      - '.github/workflows/package.yml'
 
 permissions:
   contents: write
+
+concurrency:
+  group: burrow-release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   package:
@@ -15,6 +25,23 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read release version
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^[[:space:]]*VERSION[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' plugins/burrow.koplugin/burrow_version.lua | head -n 1)"
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          if [[ "$version" =~ -(alpha|beta|rc) ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Build release archive
         shell: bash
@@ -25,30 +52,56 @@ jobs:
         run: |
           set -euo pipefail
           archive="$(find dist -maxdepth 1 -name 'Burrow-*.zip' -print -quit)"
+          checksum="$(find dist -maxdepth 1 -name 'Burrow-*.sha256' -print -quit)"
           test -n "$archive"
+          test -n "$checksum"
           unzip -t "$archive"
           test "$(unzip -Z1 "$archive" | grep -c '^plugins/burrow.koplugin/main.lua$')" -eq 1
           test "$(unzip -Z1 "$archive" | grep -c '^FILES.sha256$')" -eq 1
+          (cd dist && sha256sum -c "$(basename "$checksum")")
 
-      - name: Upload package artifact
+      - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: burrow-package
+          name: Burrow-${{ steps.release.outputs.version }}
           path: |
             dist/Burrow-*.zip
             dist/Burrow-*.sha256
           if-no-files-found: error
 
-      - name: Create GitHub release for tag
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          IS_PRERELEASE: ${{ steps.release.outputs.prerelease }}
         shell: bash
         run: |
           set -euo pipefail
-          gh release create "${GITHUB_REF_NAME}" \
-            dist/Burrow-*.zip \
-            dist/Burrow-*.sha256 \
-            --verify-tag \
-            --generate-notes \
-            --prerelease
+
+          if ! git rev-parse "$RELEASE_TAG" >/dev/null 2>&1; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$RELEASE_TAG" -m "Burrow $RELEASE_VERSION"
+            git push origin "$RELEASE_TAG"
+          fi
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" \
+              dist/Burrow-*.zip \
+              dist/Burrow-*.sha256 \
+              --clobber
+          else
+            prerelease_args=()
+            if [[ "$IS_PRERELEASE" == "true" ]]; then
+              prerelease_args+=(--prerelease)
+            fi
+
+            gh release create "$RELEASE_TAG" \
+              dist/Burrow-*.zip \
+              dist/Burrow-*.sha256 \
+              --target "$GITHUB_SHA" \
+              --title "Burrow $RELEASE_VERSION" \
+              --generate-notes \
+              "${prerelease_args[@]}"
+          fi
