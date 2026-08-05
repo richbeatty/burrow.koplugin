@@ -10,7 +10,7 @@ Burrow brings your local library, online catalogs, series navigation, and useful
 
 [Download Burrow](https://github.com/richbeatty/burrow.koplugin/releases) · [Report a bug](https://github.com/richbeatty/burrow.koplugin/issues/new?template=bug_report.yml) · [Request a feature](https://github.com/richbeatty/burrow.koplugin/issues/new?template=feature_request.yml)
 
-> Burrow is pre-release software. Back up your KOReader data folder before installing.
+> Burrow is in public beta. Back up your KOReader data folder before installing.
 
 ## Screenshots
 
@@ -37,7 +37,7 @@ Burrow brings your local library, online catalogs, series navigation, and useful
 - Book-format filtering that keeps cover images out of download choices
 - Store styling that matches the local library
 
-### Reader and controls
+### Reader and Controls
 
 - Quick Settings with optional KoSync Push and Pull actions
 - Independent reader status-bar margins and preset cycling
@@ -65,6 +65,16 @@ plugins/burrow.koplugin/main.lua
 
 6. Fully close and restart KOReader.
 
+## Beta Notes
+
+Burrow is ready for regular use, but beta testing is still expanding across more devices, screen sizes, KOReader releases, and OPDS catalogs.
+
+- The built-in Cover Browser must remain disabled while Burrow is active.
+- Very large cover settings may leave little space between covers on dense grids.
+- Newer KOReader releases may show a compatibility warning until they have been tested.
+
+Please report repeatable crashes, layout problems, failed downloads, or data-loss concerns through the issue tracker.
+
 ## Inspiration and credits
 
 Burrow began as a personal effort to make KOReader feel more like one connected bookshelf instead of several separate tools. It would not exist without the work shared by the wider KOReader community:
@@ -79,7 +89,7 @@ See [`NOTICE.md`](NOTICE.md) for licensing and source acknowledgements.
 
 ## Status and contributing
 
-Burrow is currently in alpha testing on real devices. Bug reports, focused fixes, documentation improvements, and additional device testing are welcome.
+Burrow is currently in public beta. Bug reports, focused fixes, documentation improvements, and additional device testing are welcome.
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a pull request. Please remove passwords, tokens, private catalog URLs, personal paths, and book information from screenshots or logs.
 
