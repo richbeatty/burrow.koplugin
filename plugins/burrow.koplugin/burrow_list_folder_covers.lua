@@ -1,11 +1,9 @@
 -- Burrow folder and automatic-series cover consistency.
 --
--- KOReader's mosaic and detailed-list renderers build directory artwork through
--- separate widget paths. Automatic series also borrow the folder path but use a
--- mosaic-specific caption reserve. This module gives physical folders and
--- automatic-series folders the same full-height, rounded treatment in Cover
--- List, and gives physical folders the same caption-under-cover layout used by
--- automatic series in Cover Grid.
+-- KOReader's Cover Grid and Cover List build directory artwork through separate
+-- widget paths. This module gives physical folders and automatic-series folders
+-- one consistent treatment: a custom folder cover when one exists, otherwise
+-- the first available book cover, with no multi-cover mosaic fallback.
 
 local Blitbuffer = require("ffi/blitbuffer")
 local CenterContainer = require("ui/widget/container/centercontainer")
@@ -15,7 +13,7 @@ local Geom = require("ui/geometry")
 local ImageWidget = require("ui/widget/imagewidget")
 local Screen = require("device").screen
 local Size = require("ui/size")
-local TextWidget = require("ui/widget/textwidget")
+local TextBoxWidget = require("ui/widget/textboxwidget")
 local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan = require("ui/widget/verticalspan")
 local BookInfoManager = require("bookinfomanager")
@@ -24,6 +22,7 @@ local burrow_debug = require("burrow_debug")
 local burrow_util = require("burrow_util")
 local logger = require("logger")
 local userpatch = require("userpatch")
+local _ = require("l10n.gettext")
 
 local Module = {
     key = "burrow.folder_cover_consistency",
@@ -99,33 +98,75 @@ local function fitPortrait(max_w, max_h)
     return math.max(1, w), math.max(1, h)
 end
 
-local function firstSeriesCover(entry, width, height)
-    for _, book_entry in ipairs(seriesItems(entry) or {}) do
-        local path = book_entry.path or book_entry.file
-        if path then
-            local bookinfo = BookInfoManager:getBookInfo(path, true)
-            if bookinfo
-                and bookinfo.cover_bb
-                and bookinfo.has_cover
-                and bookinfo.cover_fetched
-                and not bookinfo.ignore_cover
-                and bookinfo.cover_w
-                and bookinfo.cover_h
-                and bookinfo.cover_w > 0
-                and bookinfo.cover_h > 0
-            then
-                local scale_to_fill = math.max(
-                    width / bookinfo.cover_w,
-                    height / bookinfo.cover_h
-                )
-                return ImageWidget:new {
-                    image = bookinfo.cover_bb,
-                    width = width,
-                    height = height,
-                    scale_factor = scale_to_fill,
-                    center_x_ratio = 0.5,
-                    center_y_ratio = 0.5,
-                }
+local function imageFromBook(path, width, height)
+    if not path then
+        return nil
+    end
+
+    local bookinfo = BookInfoManager:getBookInfo(path, true)
+    if not bookinfo
+        or not bookinfo.cover_bb
+        or not bookinfo.has_cover
+        or not bookinfo.cover_fetched
+        or bookinfo.ignore_cover
+        or not bookinfo.cover_w
+        or not bookinfo.cover_h
+        or bookinfo.cover_w <= 0
+        or bookinfo.cover_h <= 0
+    then
+        return nil
+    end
+
+    local scale_to_fill = math.max(
+        width / bookinfo.cover_w,
+        height / bookinfo.cover_h
+    )
+    return ImageWidget:new {
+        image = bookinfo.cover_bb,
+        width = width,
+        height = height,
+        scale_factor = scale_to_fill,
+        center_x_ratio = 0.5,
+        center_y_ratio = 0.5,
+    }
+end
+
+local function firstSeriesCover(item, width, height)
+    for _, book_entry in ipairs(seriesItems(item) or {}) do
+        local image = imageFromBook(book_entry.path or book_entry.file, width, height)
+        if image then
+            return image
+        end
+    end
+end
+
+local function physicalFolderEntries(item)
+    local menu = item and item.menu
+    local entry = item and item.entry
+    local path = item and (item.filepath or (entry and entry.path))
+    if not menu or type(menu.genItemTableFromPath) ~= "function" or not path then
+        return nil
+    end
+
+    local previous_dummy = menu._dummy
+    menu._dummy = true
+    local ok, entries = pcall(menu.genItemTableFromPath, menu, path)
+    menu._dummy = previous_dummy
+    if ok and type(entries) == "table" then
+        return entries
+    end
+end
+
+local function firstPhysicalFolderCover(item, width, height)
+    for _, book_entry in ipairs(physicalFolderEntries(item) or {}) do
+        if entryIsFile(book_entry) then
+            local image = imageFromBook(
+                book_entry.path or book_entry.file,
+                width,
+                height
+            )
+            if image then
+                return image
             end
         end
     end
@@ -135,7 +176,7 @@ local function directoryArtwork(item, width, height)
     local entry = item.entry or {}
 
     if entryIsSeries(item) then
-        local series_cover = firstSeriesCover(entry, width, height)
+        local series_cover = firstSeriesCover(item, width, height)
         if series_cover then
             return series_cover
         end
@@ -150,15 +191,9 @@ local function directoryArtwork(item, width, height)
             return folder_cover
         end
 
-        if not BookInfoManager:getSetting("disable_auto_foldercovers") then
-            local generated = burrow_util.getSubfolderCoverImages(
-                item.filepath or entry.path,
-                width,
-                height
-            )
-            if generated then
-                return generated
-            end
+        local first_book = firstPhysicalFolderCover(item, width, height)
+        if first_book then
+            return first_book
         end
     end
 
@@ -200,15 +235,13 @@ end
 
 local function cleanTitle(item)
     local text = (item.entry and item.entry.text) or item.text or ""
-    text = text:gsub("[/\\]+$", "")
-    return text
+    return text:gsub("[/\\]+$", "")
 end
 
-local function rebuildMosaicPhysicalFolder(item)
+local function rebuildMosaicDirectory(item)
     local entry = item and item.entry
     if not entry
         or entryIsFile(entry)
-        or entryIsSeries(item)
         or entryIsNavigation(entry)
         or not item.do_cover_image
         or not item.width
@@ -226,14 +259,15 @@ local function rebuildMosaicPhysicalFolder(item)
         math.max(1, item.width - 2 * SIDE_MARGIN),
         available_h
     )
-    local caption = TextWidget:new {
+    local caption = TextBoxWidget:new {
         text = cleanTitle(item),
         face = Font:getFace("cfont", CAPTION_FONT_SIZE),
         bold = true,
-        max_width = math.max(1, item.width - 2 * SIDE_MARGIN),
+        width = math.max(1, item.width - 2 * SIDE_MARGIN),
+        height = CAPTION_HEIGHT,
+        height_adjust = true,
+        height_overflow_show_ellipsis = true,
         alignment = "center",
-        padding = 0,
-        forced_height = CAPTION_HEIGHT,
     }
 
     local tile = CenterContainer:new {
@@ -253,10 +287,11 @@ local function rebuildMosaicPhysicalFolder(item)
         previous:free(true)
     end
 
-    -- Prevent the older physical-folder paint hook from drawing its former
-    -- frame, title overlay, and corner masks over the replacement widget.
+    -- Disable the older physical-folder paint hook so it cannot redraw the
+    -- former title overlay, item-count circle, or corner masks on top.
     item._folder_frame_dimen = nil
     item._folder_image_size = nil
+    item._foldercover_processed = true
     item._burrow_unified_mosaic_folder = true
     item.bookinfo_found = true
     if item.menu then
@@ -320,6 +355,24 @@ local function rebuildListDirectory(item)
     item._has_cover_image = true
 end
 
+local function removeSeriesBadge(item)
+    if not BookInfoManager:getSetting("hide_series_number_badge") then
+        return
+    end
+
+    if item._series_badge_background then
+        item._series_badge_background:free(true)
+        item._series_badge_background = nil
+    end
+    if item._series_text then
+        item._series_text:free(true)
+        item._series_text = nil
+    end
+    item._series_badge_diameter = nil
+    item.series_index = nil
+    item.has_series_badge = nil
+end
+
 local function patchMosaic()
     local MosaicMenu = require("mosaicmenu")
     local MosaicMenuItem = userpatch.getUpValue(
@@ -329,15 +382,23 @@ local function patchMosaic()
     if not MosaicMenuItem then
         return false, "Could not find Cover Grid item class"
     end
-    if MosaicMenuItem._burrow_unified_physical_folders then
+    if MosaicMenuItem._burrow_unified_directory_covers then
         return true
     end
-    MosaicMenuItem._burrow_unified_physical_folders = true
+    MosaicMenuItem._burrow_unified_directory_covers = true
+
+    local original_init = MosaicMenuItem.init
+    function MosaicMenuItem:init(...)
+        local result = original_init(self, ...)
+        removeSeriesBadge(self)
+        return result
+    end
 
     local original_update = MosaicMenuItem.update
     function MosaicMenuItem:update(...)
         local result = original_update(self, ...)
-        local ok, err = pcall(rebuildMosaicPhysicalFolder, self)
+        removeSeriesBadge(self)
+        local ok, err = pcall(rebuildMosaicDirectory, self)
         if not ok then
             logger.warn(burrow_debug.logprefix, "Could not unify Cover Grid folder", err)
         end
@@ -369,27 +430,92 @@ local function patchList()
         end
         return result
     end
+
+    -- Also restyle every completed row after the page builder runs. This catches
+    -- list items that were created before the class wrapper was installed or
+    -- rebuilt through a cached menu path.
+    local original_build = ListMenu._updateItemsBuildUI
+    function ListMenu:_updateItemsBuildUI(...)
+        local result = original_build(self, ...)
+        for _, child in ipairs(self.item_group or {}) do
+            if type(child) == "table" and child.entry and child._underline_container then
+                local ok, err = pcall(rebuildListDirectory, child)
+                if not ok then
+                    logger.warn(burrow_debug.logprefix, "Could not restyle Cover List row", err)
+                end
+            end
+        end
+        return result
+    end
     return true
 end
 
-function Module.apply()
+local function findMenuItem(items, text)
+    for _, item in ipairs(items or {}) do
+        local item_text = item.text or (item.text_func and item.text_func())
+        if item_text == text then
+            return item
+        end
+    end
+end
+
+local function patchSettingsMenu(Burrow)
+    if type(Burrow) ~= "table" or type(Burrow.addToMainMenu) ~= "function" then
+        return false, "Burrow settings menu was not available"
+    end
+    if Burrow._burrow_series_badge_setting_added then
+        return true
+    end
+    Burrow._burrow_series_badge_setting_added = true
+
+    local original_addToMainMenu = Burrow.addToMainMenu
+    function Burrow:addToMainMenu(menu_items)
+        original_addToMainMenu(self, menu_items)
+
+        local root = menu_items.filemanager_display_mode
+        local advanced = root and findMenuItem(root.sub_item_table, _("Advanced settings"))
+        local book_display = advanced and findMenuItem(advanced.sub_item_table, _("Book display"))
+        if not book_display or findMenuItem(book_display.sub_item_table, _("Show series number badges")) then
+            return
+        end
+
+        table.insert(book_display.sub_item_table, {
+            text = _("Show series number badges"),
+            checked_func = function()
+                return not BookInfoManager:getSetting("hide_series_number_badge")
+            end,
+            callback = function()
+                BookInfoManager:toggleSetting("hide_series_number_badge")
+                local fc = self.ui and self.ui.file_chooser
+                if fc then
+                    fc:updateItems(1, true)
+                end
+            end,
+        })
+    end
+    return true
+end
+
+function Module.apply(Burrow)
     if Module.applied then
         return true
     end
 
     local mosaic_ok, mosaic_error = patchMosaic()
     local list_ok, list_error = patchList()
-    if not mosaic_ok or not list_ok then
+    local menu_ok, menu_error = patchSettingsMenu(Burrow)
+    if not mosaic_ok or not list_ok or not menu_ok then
         return false, table.concat({
             mosaic_error or "",
             list_error or "",
+            menu_error or "",
         }, " ")
     end
 
     Module.applied = true
     logger.info(
         burrow_debug.logprefix,
-        "Unified physical-folder and automatic-series cover styling loaded"
+        "Unified folder and automatic-series cover styling loaded"
     )
     return true
 end
