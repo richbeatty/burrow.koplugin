@@ -17,7 +17,7 @@ trap 'rm -rf "$stage_dir"' EXIT
 
 mkdir -p "$dist_dir" "$stage_dir/plugins"
 
-for file in README.md INSTALL.txt CHANGELOG.md LICENSE NOTICE.md REMOVE_OLD_FILES.txt; do
+for file in README.md INSTALL.txt CHANGELOG.md LICENSE NOTICE.md; do
   cp "$file" "$stage_dir/$file"
 done
 cp -R plugins/burrow.koplugin "$stage_dir/plugins/"
