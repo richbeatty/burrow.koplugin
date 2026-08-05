@@ -1,0 +1,40 @@
+name: Package Burrow
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build release archive
+        shell: bash
+        run: bash scripts/package.sh
+
+      - name: Verify archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$(find dist -maxdepth 1 -name 'Burrow-*.zip' -print -quit)"
+          test -n "$archive"
+          unzip -t "$archive"
+          test "$(unzip -Z1 "$archive" | grep -c '^plugins/burrow.koplugin/main.lua$')" -eq 1
+          test "$(unzip -Z1 "$archive" | grep -c '^FILES.sha256$')" -eq 1
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: burrow-package
+          path: |
+            dist/Burrow-*.zip
+            dist/Burrow-*.sha256
+          if-no-files-found: error
