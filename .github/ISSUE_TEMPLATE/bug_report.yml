@@ -1,0 +1,75 @@
+name: Bug report
+description: Report a reproducible Burrow problem
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please remove credentials, tokens, personal paths, and private book information before submitting logs or screenshots.
+  - type: input
+    id: burrow_version
+    attributes:
+      label: Burrow version
+      placeholder: 0.2.1-alpha
+    validations:
+      required: true
+  - type: input
+    id: koreader_version
+    attributes:
+      label: KOReader version
+      description: Include the complete git-rev when using a nightly build.
+      placeholder: v2026.07.1
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and operating system
+      placeholder: Android tablet, Kobo Libra, Kindle, Linux desktop, etc.
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the problem and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open...
+        2. Tap...
+        3. Return...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant crash.log section
+      description: Redact credentials, tokens, URLs, personal paths, and book information.
+      render: text
+  - type: textarea
+    id: conflicts
+    attributes:
+      label: Other plugins and userpatches
+      description: List anything that changes covers, file-browser menus, reader menus, status bars, or navigation.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission checks
+      options:
+        - label: I fully restarted KOReader after installing or changing Burrow.
+          required: true
+        - label: KOReader's built-in Cover Browser is disabled.
+          required: true
+        - label: Standalone ProjectTitle and OPDS Plus plugins are disabled or removed.
+          required: true
+        - label: The old 2-burrow-bootstrap.lua patch is removed.
+          required: true
+        - label: I removed private information from the report.
+          required: true
