@@ -11,7 +11,6 @@
 -- a partially applied feature until the plugin or KOReader version changes (or
 -- the quarantine is manually cleared).
 
-local DataStorage = require("datastorage")
 local lfs = require("libs/libkoreader-lfs")
 local logger = require("logger")
 local Version = require("version")
@@ -383,14 +382,6 @@ end
 
 function Loader:getCriticalFailure()
     return self.critical_failure
-end
-
-function Loader:getLegacyBootstrapPath()
-    return DataStorage:getPatchesDir() .. "/2-burrow-bootstrap.lua"
-end
-
-function Loader:isLegacyBootstrapPresent()
-    return lfs.attributes(self:getLegacyBootstrapPath(), "mode") == "file"
 end
 
 return Loader

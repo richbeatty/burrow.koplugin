@@ -146,19 +146,6 @@ function BurrowSettings:getModuleManifest()
     return modules
 end
 
--- Compatibility for the 0.1.x bootstrap. If an old bootstrap remains after an
--- upgrade, it can still discover the files. Each file is now an idempotent
--- plugin module, so the plugin-owned loader will not apply it twice.
-function BurrowSettings:getPatchManifest()
-    local files = {}
-    for _, module in ipairs(self:getModuleManifest()) do
-        if module.filename then
-            files[#files + 1] = module.filename
-        end
-    end
-    return files
-end
-
 local function saveIfMissing(settings, key, value)
     if settings:getSetting(key) == nil then
         settings:saveSetting(key, value)
@@ -349,7 +336,6 @@ function BurrowSettings:removeAllSettings()
     local keys = {
         "burrow_defaults_applied_v1",
         "burrow_defaults_applied_v2",
-        "burrow_bootstrap_removal_notice_v020",
         "burrow_home_store_show_labels",
         "burrow_home_store_auto_hide_without_catalogs",
         "burrow_home_store_label_size_percent",

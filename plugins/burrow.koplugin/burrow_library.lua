@@ -1,8 +1,7 @@
 -- Burrow core library runtime.
 --
--- This module owns the legacy ProjectTitle-derived library hooks that were
--- previously defined directly in main.lua. It is required once per KOReader
--- process, keeps the original KOReader methods in one guarded runtime, and can
+-- This module owns Burrow's guarded library hooks. It is required once per
+-- KOReader process, keeps the original KOReader methods in one runtime, and can
 -- attach the same method set to a newly sourced Burrow plugin class without
 -- wrapping KOReader a second time.
 
@@ -180,15 +179,9 @@ function Methods:init()
         BurrowClass._burrow_instance = self
         self.ui.menu:registerToMainMenu(self)
 
-        if not BurrowClass._plugin_only_notice_checked then
-            BurrowClass._plugin_only_notice_checked = true
+        if not BurrowClass._startup_notice_checked then
+            BurrowClass._startup_notice_checked = true
             local notices = {}
-            if BurrowLoader:isLegacyBootstrapPresent()
-                and not G_reader_settings:isTrue("burrow_bootstrap_removal_notice_v020")
-            then
-                notices[#notices + 1] = _("Burrow no longer needs patches/2-burrow-bootstrap.lua. Remove that old file and restart KOReader.")
-                G_reader_settings:makeTrue("burrow_bootstrap_removal_notice_v020")
-            end
             if BurrowClass._compatibility_notice then
                 local warning_key = "burrow_compatibility_warning_"
                     .. tostring(BurrowClass._compatibility and BurrowClass._compatibility.current or "unknown")
@@ -930,7 +923,7 @@ function Methods:addToMainMenu(menu_items)
         keep_menu_open = true,
         callback = function()
             UIManager:show(InfoMessage:new {
-                text = T(_("Burrow %1\n\nUnified library, Store, and reader interface for KOReader.\n\nPlugin-only installation. No bootstrap patch is required.\n\nLibrary engine derived from ProjectTitle by Joshua Cantrell. Store engine derived from OPDS Plus by greywolf1499. Licensed under GNU AGPL v3."), BurrowVersion.DISPLAY_VERSION),
+                text = T(_("Burrow %1\n\nA unified library, Store, and reader interface for KOReader.\n\nInspired by ProjectTitle, OPDS Plus, and the wider KOReader community.\n\nLicensed under GNU AGPL v3."), BurrowVersion.DISPLAY_VERSION),
                 show_icon = false,
             })
         end,
