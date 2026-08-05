@@ -10,7 +10,6 @@ It includes and modifies code from:
 - The rounded quick-settings patch originally published by qewer33, with further Burrow modifications.
 - Status-bar preset-cycling behavior derived from work published in sebdelsol/KOReader.patches, with independent margin controls and further Burrow modifications.
 
-The bundled code was reorganized and modified for Burrow on August 4, 2026. Burrow 0.1.3 moved active code, settings keys, persistent filenames, internal patches, and the embedded Store into Burrow-owned namespaces. Legacy names are retained only for migration, conflict detection, removal guidance, and attribution.
+The bundled code was reorganized and modified for Burrow beginning on August 4, 2026. Active code, settings keys, persistent filenames, internal modules, and the embedded Store use Burrow-owned namespaces. Historical names remain only where needed for data migration and attribution.
 
 Burrow is not affiliated with or endorsed by the upstream projects or their contributors.
-Burrow 0.2.1 loads its modules from inside the plugin and does not require an external bootstrap patch. This architectural change does not alter the upstream attribution or license obligations described above.
