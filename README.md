@@ -46,10 +46,10 @@ Suggested screenshot paths:
 
 ### Reader and controls
 
-- Rounded Quick Settings with optional KoSync Push and Pull actions
+- Quick Settings with optional KoSync Push and Pull actions
 - Independent reader status-bar margins and preset cycling
 - Reading-location return control
-- Rounded native top and in-reader menus
+- Native top and in-reader menus
 - Light and dark mode-aware Burrow icons
 
 ## Compatibility
