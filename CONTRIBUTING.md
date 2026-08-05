@@ -8,8 +8,6 @@ Please check existing issues and confirm that:
 
 - Burrow is the latest available version
 - KOReader's built-in Cover Browser is disabled
-- standalone ProjectTitle and OPDS Plus plugins are disabled or removed
-- the obsolete `patches/2-burrow-bootstrap.lua` file is removed
 - the problem remains after fully restarting KOReader
 
 ## Bug reports
@@ -60,7 +58,7 @@ High-risk workflows include:
 - Store downloads and failed-download retries
 - menu opening and closing after orientation changes
 - plugin disable, restart, re-enable, and restart
-- upgrade and migration from earlier Burrow versions
+- upgrades from earlier Burrow versions
 
 ## License
 
