@@ -4,19 +4,21 @@ All notable changes to Burrow will be documented here.
 
 ## [Unreleased]
 
+## [0.3.0-beta] - 2026-08-05
+
+### Added
+
+- Public beta documentation and device screenshots
+- Beta notes covering current compatibility and testing limits
+
 ### Changed
 
+- Promoted Burrow from alpha to public beta
 - Updated the last-tested KOReader version to 2026.07.2
 
 ### Fixed
 
 - Capitalized the Reading Controls and Quick Settings panel titles
-
-### Planned
-
-- Wider real-device testing across Android and dedicated e-ink devices
-- Public beta screenshots and documentation polish
-- Additional automated regression coverage
 
 ## [0.2.2-alpha] - 2026-08-05
 
@@ -79,7 +81,8 @@ All notable changes to Burrow will be documented here.
 
 - Initial unified Burrow library, Store, and reader-interface package
 
-[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.2.2-alpha...HEAD
+[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.3.0-beta...HEAD
+[0.3.0-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.0-beta
 [0.2.2-alpha]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.2.2-alpha
 [0.2.1-alpha]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.2.1-alpha
 [0.2.0-alpha]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.2.0-alpha
