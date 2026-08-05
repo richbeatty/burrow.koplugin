@@ -1,0 +1,88 @@
+name: Finalize public source
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/finalize-public-source.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Remove obsolete source references
+        run: python scripts/finalize_public_source.py
+
+      - name: Remove one-time cleanup files
+        run: |
+          rm scripts/finalize_public_source.py
+          rm .github/workflows/finalize-public-source.yml
+
+      - name: Install validation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.1 zip
+
+      - name: Validate Lua source
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            luac5.1 -p "$file"
+          done < <(find plugins/burrow.koplugin -type f -name '*.lua' -print0)
+
+      - name: Build release package
+        run: bash scripts/package.sh
+
+      - name: Commit finalized source
+        id: commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Remove obsolete compatibility references"
+          git push origin HEAD:main
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Refresh release download
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ steps.commit.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^[[:space:]]*VERSION[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' plugins/burrow.koplugin/burrow_version.lua | head -n 1)"
+          tag="v$version"
+
+          git tag -f "$tag" "$RELEASE_SHA"
+          git push origin "refs/tags/$tag" --force
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" \
+              dist/Burrow-*.zip \
+              dist/Burrow-*.sha256 \
+              --clobber
+          else
+            prerelease_args=()
+            if [[ "$version" =~ -(alpha|beta|rc) ]]; then
+              prerelease_args+=(--prerelease)
+            fi
+            gh release create "$tag" \
+              dist/Burrow-*.zip \
+              dist/Burrow-*.sha256 \
+              --target "$RELEASE_SHA" \
+              --title "Burrow $version" \
+              --generate-notes \
+              "${prerelease_args[@]}"
+          fi
