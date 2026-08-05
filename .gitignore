@@ -1,24 +1,31 @@
-# Editor and OS files
-*.swp
-*.bak
-*~
+# Editors and operating systems
 .DS_Store
 Thumbs.db
+*.swp
+*.swo
+*.bak
+*~
 .idea/
 .vscode/
 
-# Runtime and local data
+# KOReader runtime and personal data
 settings/
 cache/
+history/
+books/
 *.log
+*.sqlite
 *.sqlite3
+opdsplus.lua
+burrow_store.lua
+settings_reader.lua
 
-# Build output
+# Generated release files
 /dist/
+Burrow-*.zip
+Burrow-*.sha256
+
+# Temporary files
 /tmp/
 __pycache__/
 *.pyc
-
-# Generated archives
-Burrow-*.zip
-Burrow-*.sha256
