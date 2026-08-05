@@ -4,6 +4,14 @@ All notable changes to Burrow will be documented here.
 
 ## [Unreleased]
 
+## [0.3.3-beta] - 2026-08-05
+
+### Fixed
+
+- Prevented legacy ProjectTitle and generated folder-cover cache paths from being treated as custom folder images
+- Physical folders now use only a real folder-local cover image or the first available book cover
+- Published the folder fix under a new version so users do not receive a cached 0.3.2 package
+
 ## [0.3.2-beta] - 2026-08-05
 
 ### Added
@@ -105,7 +113,8 @@ All notable changes to Burrow will be documented here.
 
 - Initial unified Burrow library, Store, and reader-interface package
 
-[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.3.2-beta...HEAD
+[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.3.3-beta...HEAD
+[0.3.3-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.3-beta
 [0.3.2-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.2-beta
 [0.3.1-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.1-beta
 [0.3.0-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.0-beta
