@@ -1,0 +1,299 @@
+name: Publish Burrow 0.3.6 beta
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/publish-036.yml
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply tested 0.3.6 changes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected 1 match, found {count}")
+              return text.replace(old, new, 1)
+
+          folder_path = Path("plugins/burrow.koplugin/burrow_list_folder_covers.lua")
+          folder = folder_path.read_text()
+
+          folder = replace_once(
+              folder,
+              'local TopContainer = require("ui/widget/container/topcontainer")\nlocal VerticalGroup = require("ui/widget/verticalgroup")',
+              'local TopContainer = require("ui/widget/container/topcontainer")\nlocal Widget = require("ui/widget/widget")\nlocal VerticalGroup = require("ui/widget/verticalgroup")',
+              "Widget import",
+          )
+
+          old_marker = '''local function directoryMarkerLayer(width, height)
+              local marker_size = math.min(
+                  DIRECTORY_MARKER_SIZE,
+                  math.max(Screen:scaleBySize(12), math.floor(math.min(width, height) * 0.24))
+              )
+              local marker = IconWidget:new {
+                  icon = "series.folder",
+                  alpha = true,
+                  width = marker_size,
+                  height = marker_size,
+              }
+
+              return TopContainer:new {
+                  dimen = Geom:new { w = width, h = height },
+                  LeftContainer:new {
+                      dimen = Geom:new { w = width, h = height },
+                      VerticalGroup:new {
+                          VerticalSpan:new { width = DIRECTORY_MARKER_INSET },
+                          HorizontalGroup:new {
+                              HorizontalSpan:new { width = DIRECTORY_MARKER_INSET },
+                              marker,
+                          },
+                      },
+                  },
+              }
+          end'''
+
+          new_marker = '''local function directoryMarkerLayer(width, height)
+              local marker_size = math.min(
+                  DIRECTORY_MARKER_SIZE,
+                  math.max(Screen:scaleBySize(12), math.floor(math.min(width, height) * 0.24))
+              )
+              local marker = IconWidget:new {
+                  icon = "series.folder",
+                  alpha = true,
+                  width = marker_size,
+                  height = marker_size,
+              }
+
+              -- LeftContainer vertically centers its child inside its own dimensions.
+              -- Giving it the full cover height placed the marker halfway down the cover.
+              -- Limit it to a shallow top row so the centered marker lands at the same
+              -- top/left inset used by Burrow's automatic-series marker.
+              local top_row_height = math.min(
+                  height,
+                  marker_size + (2 * DIRECTORY_MARKER_INSET)
+              )
+              return TopContainer:new {
+                  dimen = Geom:new { w = width, h = height },
+                  LeftContainer:new {
+                      dimen = Geom:new { w = width, h = top_row_height },
+                      HorizontalGroup:new {
+                          HorizontalSpan:new { width = DIRECTORY_MARKER_INSET },
+                          marker,
+                      },
+                  },
+              }
+          end'''
+          folder = replace_once(folder, old_marker, new_marker, "folder marker")
+
+          old_cover = '''local function roundedDirectoryCover(item, max_w, max_h)
+              local border_total = Size.border.thin * 2
+              local art_w, art_h = fitPortrait(
+                  math.max(1, max_w - border_total),
+                  math.max(1, max_h - border_total)
+              )
+              local artwork = directoryArtwork(item, art_w, art_h)
+
+              return FrameContainer:new {
+                  width = art_w + border_total,
+                  height = art_h + border_total,
+                  margin = 0,
+                  padding = 0,
+                  radius = Size.radius.default,
+                  bordersize = Size.border.thin,
+                  color = Blitbuffer.COLOR_GRAY_3,
+                  background = Blitbuffer.COLOR_GRAY_3,
+                  artwork,
+              }
+          end'''
+
+          new_cover = '''-- FrameContainer draws a rounded border but does not clip its child image.
+          -- Use the same explicit corner masking used by Burrow's book and hero covers so
+          -- physical-folder artwork is actually rounded in both Cover Grid and Cover List.
+          local RoundedDirectoryCover = Widget:extend {
+              inner = nil,
+              width = nil,
+              height = nil,
+              radius = 0,
+              border_size = 0,
+          }
+
+          function RoundedDirectoryCover:init()
+              self.dimen = Geom:new { w = self.width, h = self.height }
+          end
+
+          function RoundedDirectoryCover:getSize()
+              return self.dimen
+          end
+
+          function RoundedDirectoryCover:free(...)
+              if self.inner and self.inner.free then
+                  self.inner:free(...)
+              end
+          end
+
+          function RoundedDirectoryCover:paintTo(bb, x, y)
+              local border = self.border_size or 0
+              local radius = math.min(
+                  self.radius or 0,
+                  math.floor(self.width / 2),
+                  math.floor(self.height / 2)
+              )
+
+              bb:paintRect(x, y, self.width, self.height, Blitbuffer.COLOR_WHITE)
+              if self.inner then
+                  self.inner:paintTo(bb, x + border, y + border)
+              end
+
+              if radius > 0 then
+                  local radius_sq = radius * radius
+                  for dy = 0, radius - 1 do
+                      local cutoff = 0
+                      local ddy = dy - radius
+                      while cutoff < radius
+                              and (cutoff - radius) * (cutoff - radius) + ddy * ddy > radius_sq do
+                          cutoff = cutoff + 1
+                      end
+                      if cutoff > 0 then
+                          bb:paintRect(x, y + dy, cutoff, 1, Blitbuffer.COLOR_WHITE)
+                          bb:paintRect(x + self.width - cutoff, y + dy, cutoff, 1, Blitbuffer.COLOR_WHITE)
+                          bb:paintRect(x, y + self.height - dy - 1, cutoff, 1, Blitbuffer.COLOR_WHITE)
+                          bb:paintRect(
+                              x + self.width - cutoff,
+                              y + self.height - dy - 1,
+                              cutoff,
+                              1,
+                              Blitbuffer.COLOR_WHITE
+                          )
+                      end
+                  end
+              end
+
+              if border > 0 then
+                  bb:paintBorder(
+                      x,
+                      y,
+                      self.width,
+                      self.height,
+                      border,
+                      Blitbuffer.COLOR_GRAY_3,
+                      radius,
+                      true
+                  )
+              end
+          end
+
+          local function roundedDirectoryCover(item, max_w, max_h)
+              local border = Size.border.thin
+              local border_total = border * 2
+              local art_w, art_h = fitPortrait(
+                  math.max(1, max_w - border_total),
+                  math.max(1, max_h - border_total)
+              )
+              local artwork = directoryArtwork(item, art_w, art_h)
+
+              return RoundedDirectoryCover:new {
+                  width = art_w + border_total,
+                  height = art_h + border_total,
+                  radius = math.max(Screen:scaleBySize(6), Size.radius.default),
+                  border_size = border,
+                  inner = artwork,
+              }
+          end'''
+          folder = replace_once(folder, old_cover, new_cover, "rounded folder cover")
+          folder_path.write_text(folder)
+
+          footer_path = Path("plugins/burrow.koplugin/internal_patches/2-home-store-footer.lua")
+          footer = footer_path.read_text()
+          old_home = '''    local function isHomeFolder(menu)
+                  if not menu or not menu.path_items then
+                      return false
+                  end
+                  local home = normalizePath(G_reader_settings:readSetting("home_dir"))
+                  local current = normalizePath(menu.path)
+                  return home ~= nil and current == home
+              end'''
+          new_home = '''    local function isLibraryFolder(menu)
+                  if not menu or not menu.path_items then
+                      return false
+                  end
+                  local home = normalizePath(G_reader_settings:readSetting("home_dir"))
+                  local current = normalizePath(menu.path)
+                  if not home or not current then
+                      return false
+                  end
+                  if home == "/" then
+                      return current:sub(1, 1) == "/"
+                  end
+                  return current == home
+                      or current:sub(1, #home + 1) == home .. "/"
+              end'''
+          footer = replace_once(footer, old_home, new_home, "nested library footer")
+          footer = footer.replace("isHomeFolder(", "isLibraryFolder(")
+          footer_path.write_text(footer)
+
+          version_path = Path("plugins/burrow.koplugin/burrow_version.lua")
+          version = version_path.read_text()
+          version = replace_once(version, 'VERSION = "0.3.5-beta"', 'VERSION = "0.3.6-beta"', "version")
+          version = replace_once(version, 'DISPLAY_VERSION = "0.3.5 beta"', 'DISPLAY_VERSION = "0.3.6 beta"', "display version")
+          version_path.write_text(version)
+
+          install_path = Path("INSTALL.txt")
+          install = install_path.read_text()
+          install = replace_once(install, "BURROW 0.3.5 BETA INSTALLATION", "BURROW 0.3.6 BETA INSTALLATION", "install version")
+          install_path.write_text(install)
+
+          changelog_path = Path("CHANGELOG.md")
+          changelog = changelog_path.read_text()
+          entry = '''## [0.3.6-beta] - 2026-08-05
+
+          ### Added
+
+          - Extended the Home and Store footer to nested manual folders inside the configured library
+
+          ### Fixed
+
+          - Anchored the folder and collection marker to the upper-left corner of the cover
+          - Applied real rounded-corner masking to manual-folder artwork in Cover Grid and Cover List
+
+          '''
+          changelog = replace_once(changelog, "## [Unreleased]\n\n", "## [Unreleased]\n\n" + entry, "changelog entry")
+          changelog = replace_once(
+              changelog,
+              "[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.3.5-beta...HEAD",
+              "[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.3.6-beta...HEAD\n[0.3.6-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.6-beta",
+              "changelog links",
+          )
+          changelog_path.write_text(changelog)
+
+          Path(".github/workflows/publish-036.yml").unlink()
+          PY
+
+      - name: Validate Lua syntax
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lua5.1
+          find plugins/burrow.koplugin -type f -name '*.lua' -print0 | xargs -0 -n1 luac5.1 -p
+
+      - name: Commit tested beta
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Publish Burrow 0.3.6 beta"
+          git push
