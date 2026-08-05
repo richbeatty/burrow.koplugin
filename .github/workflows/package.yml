@@ -8,7 +8,12 @@ on:
     tags:
       - 'v*'
     paths:
-      - 'plugins/burrow.koplugin/burrow_version.lua'
+      - 'README.md'
+      - 'INSTALL.txt'
+      - 'CHANGELOG.md'
+      - 'LICENSE'
+      - 'NOTICE.md'
+      - 'plugins/burrow.koplugin/**'
       - 'scripts/package.sh'
       - '.github/workflows/package.yml'
 
