@@ -5,8 +5,6 @@ on:
   push:
     branches:
       - main
-    tags:
-      - 'v*'
     paths:
       - 'README.md'
       - 'INSTALL.txt'
@@ -21,7 +19,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: burrow-release-${{ github.ref }}
+  group: burrow-release
   cancel-in-progress: false
 
 jobs:
@@ -74,7 +72,7 @@ jobs:
             dist/Burrow-*.sha256
           if-no-files-found: error
 
-      - name: Publish GitHub release
+      - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
@@ -84,29 +82,34 @@ jobs:
         run: |
           set -euo pipefail
 
-          if ! git rev-parse "$RELEASE_TAG" >/dev/null 2>&1; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git tag -a "$RELEASE_TAG" -m "Burrow $RELEASE_VERSION"
-            git push origin "$RELEASE_TAG"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Pre-release tags follow the current tested source while alpha/beta
+          # packages are being refined. Stable version tags remain immutable.
+          if [[ "$IS_PRERELEASE" == "true" ]]; then
+            git tag -fa "$RELEASE_TAG" "$GITHUB_SHA" -m "Burrow $RELEASE_VERSION"
+            git push origin "refs/tags/$RELEASE_TAG" --force
+          elif ! git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            git tag -a "$RELEASE_TAG" "$GITHUB_SHA" -m "Burrow $RELEASE_VERSION"
+            git push origin "refs/tags/$RELEASE_TAG"
           fi
 
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" \
-              dist/Burrow-*.zip \
-              dist/Burrow-*.sha256 \
-              --clobber
-          else
-            prerelease_args=()
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             if [[ "$IS_PRERELEASE" == "true" ]]; then
-              prerelease_args+=(--prerelease)
+              gh release create "$RELEASE_TAG" \
+                --title "Burrow $RELEASE_VERSION" \
+                --generate-notes \
+                --prerelease
+            else
+              gh release create "$RELEASE_TAG" \
+                --title "Burrow $RELEASE_VERSION" \
+                --generate-notes \
+                --latest
             fi
-
-            gh release create "$RELEASE_TAG" \
-              dist/Burrow-*.zip \
-              dist/Burrow-*.sha256 \
-              --target "$GITHUB_SHA" \
-              --title "Burrow $RELEASE_VERSION" \
-              --generate-notes \
-              "${prerelease_args[@]}"
           fi
+
+          gh release upload "$RELEASE_TAG" \
+            dist/Burrow-*.zip \
+            dist/Burrow-*.sha256 \
+            --clobber
