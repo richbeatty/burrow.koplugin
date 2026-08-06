@@ -1,10 +1,11 @@
 name: Publish Burrow 0.3.7 beta
 
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, synchronize, reopened]
     paths:
       - .github/burrow-release/trigger-037
+      - .github/workflows/publish-037.yml
 
 permissions:
   contents: write
