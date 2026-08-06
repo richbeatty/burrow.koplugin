@@ -24,14 +24,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat .github/burrow-release/037.part* | base64 -d > /tmp/burrow-037.tgz
+          cat .github/burrow-release/fixed.* | base64 -d > /tmp/burrow-037.tgz
+          gzip -t /tmp/burrow-037.tgz
           tar -xzf /tmp/burrow-037.tgz
 
           python3 <<'PY'
           from pathlib import Path
           import textwrap
 
-          def replace_once(text: str, old: str, new: str, label: str) -> str:
+          def replace_once(text, old, new, label):
               count = text.count(old)
               if count != 1:
                   raise SystemExit(f"{label}: expected 1 match, found {count}")
@@ -39,28 +40,13 @@ jobs:
 
           version_path = Path("plugins/burrow.koplugin/burrow_version.lua")
           version = version_path.read_text()
-          version = replace_once(
-              version,
-              'VERSION = "0.3.7-test4"',
-              'VERSION = "0.3.7-beta"',
-              "version",
-          )
-          version = replace_once(
-              version,
-              'DISPLAY_VERSION = "0.3.7 test 4"',
-              'DISPLAY_VERSION = "0.3.7 beta"',
-              "display version",
-          )
+          version = replace_once(version, 'VERSION = "0.3.7-test4"', 'VERSION = "0.3.7-beta"', "version")
+          version = replace_once(version, 'DISPLAY_VERSION = "0.3.7 test 4"', 'DISPLAY_VERSION = "0.3.7 beta"', "display version")
           version_path.write_text(version)
 
           install_path = Path("INSTALL.txt")
           install = install_path.read_text()
-          install = replace_once(
-              install,
-              "BURROW 0.3.6 BETA INSTALLATION",
-              "BURROW 0.3.7 BETA INSTALLATION",
-              "install version",
-          )
+          install = replace_once(install, "BURROW 0.3.6 BETA INSTALLATION", "BURROW 0.3.7 BETA INSTALLATION", "install version")
           install_path.write_text(install)
 
           changelog_path = Path("CHANGELOG.md")
@@ -84,12 +70,7 @@ jobs:
           - Persisted cleared download queues immediately
 
           """)
-          changelog = replace_once(
-              changelog,
-              "## [Unreleased]\n\n",
-              "## [Unreleased]\n\n" + entry,
-              "changelog entry",
-          )
+          changelog = replace_once(changelog, "## [Unreleased]\n\n", "## [Unreleased]\n\n" + entry, "changelog entry")
           changelog = replace_once(
               changelog,
               "[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.3.6-beta...HEAD",
