@@ -1,7 +1,7 @@
 name: Publish Burrow 0.3.8 beta
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened]
     paths:
       - .github/burrow-release/trigger-038
