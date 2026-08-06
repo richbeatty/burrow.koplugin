@@ -59,6 +59,7 @@ local function patchBurrowFooter(plugin)
     local Screen = require("device").screen
     local TextWidget = require("ui/widget/textwidget")
     local UIManager = require("ui/uimanager")
+    local StoreTheme = require("burrow_store.ui.theme")
     local VerticalGroup = require("ui/widget/verticalgroup")
     local VerticalSpan = require("ui/widget/verticalspan")
     local Widget = require("ui/widget/widget")
@@ -139,7 +140,7 @@ local function patchBurrowFooter(plugin)
                         local SpinWidget = require("ui/widget/spinwidget")
                         UIManager:show(SpinWidget:new {
                             title_text = _("Home and Store label size"),
-                            info_text = _("Adjusts the text size of the Home and Store tabs in the Burrow home-folder footer. Restart KOReader after saving."),
+                            info_text = _("Adjusts the text size of the Home and Store tabs in both the Burrow library and Store. Restart KOReader after saving."),
                             value = getLabelSize(),
                             default_value = DEFAULT_LABEL_SIZE,
                             value_min = MIN_LABEL_SIZE,
@@ -399,6 +400,7 @@ local function patchBurrowFooter(plugin)
         active = false,
         callback = nil,
         hold_callback = nil,
+        indicator_width = nil,
     }
 
     function NavTab:init()
@@ -412,7 +414,7 @@ local function patchBurrowFooter(plugin)
             face = Font:getFace("smallinfofont", label_size),
             bold = false,
         }
-        local indicator_width = math.min(
+        local indicator_width = self.indicator_width or math.min(
             math.floor(self.width * 0.52),
             label:getSize().w + Screen:scaleBySize(4)
         )
@@ -592,6 +594,15 @@ local function patchBurrowFooter(plugin)
 
         local nav_width = math.floor(menu.screen_w * 0.88)
         local tab_width = math.max(1, math.floor(nav_width / 2))
+        local base_label_size = math.max(14, math.floor(nav_height * 0.42))
+        local label_size = math.max(8, math.floor(base_label_size * getLabelSize() / 100 + 0.5))
+        local label_face = Font:getFace("smallinfofont", label_size)
+        local home_probe = TextWidget:new { text = "Home", face = label_face, bold = false }
+        local store_probe = TextWidget:new { text = "Store", face = label_face, bold = false }
+        local indicator_width = math.min(
+            math.floor(tab_width * 0.52),
+            math.max(home_probe:getSize().w, store_probe:getSize().w) + Screen:scaleBySize(4)
+        )
 
         local home_tab = NavTab:new {
             width = tab_width,
@@ -603,6 +614,7 @@ local function patchBurrowFooter(plugin)
                     menu:onHome()
                 end
             end,
+            indicator_width = indicator_width,
         }
 
         local store_tab = NavTab:new {
@@ -626,6 +638,7 @@ local function patchBurrowFooter(plugin)
             hold_callback = function()
                 makeCatalogChooser(menu)
             end,
+            indicator_width = indicator_width,
         }
 
         local nav = HorizontalGroup:new {
@@ -736,7 +749,7 @@ local function patchBurrowFooter(plugin)
         local original_page_return = footer[2]
         local original_page_controls_child = page_controls[1]
         local original_footer_line = footer[5]
-        local footer_height = original_page_info:getSize().h
+        local footer_height = StoreTheme.getNavigationFooterHeight()
         local custom_root, dots = buildHomeFooter(self, footer_height)
         local custom_container = CenterContainer:new {
             dimen = Geom:new {

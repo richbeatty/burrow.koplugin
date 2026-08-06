@@ -4,6 +4,14 @@ All notable changes to Burrow will be documented here.
 
 ## [Unreleased]
 
+## [0.3.8-beta] - 2026-08-06
+
+### Changed
+
+- Unified the Home and Store footer dimensions so the navigation remains the same size when switching screens
+- Made the Store respect the configured Home and Store label-size setting
+- Standardized the active-tab underline width across Home and Store
+
 ## [0.3.7-beta] - 2026-08-05
 
 ### Changed
@@ -161,7 +169,8 @@ All notable changes to Burrow will be documented here.
 
 - Initial unified Burrow library, Store, and reader-interface package
 
-[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.3.7-beta...HEAD
+[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.3.8-beta...HEAD
+[0.3.8-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.8-beta
 [0.3.7-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.7-beta
 [0.3.6-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.6-beta
 [0.3.5-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.5-beta
