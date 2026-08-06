@@ -1,3 +1,4 @@
+# Triggered through release pull request
 name: Publish Burrow 0.3.7 beta
 
 on:
