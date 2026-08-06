@@ -25,6 +25,34 @@ local Widget = require("ui/widget/widget")
 
 local Theme = {}
 
+local HOME_STORE_LABEL_SIZE_SETTING = "burrow_home_store_label_size_percent"
+local HOME_STORE_SHOW_LABELS_SETTING = "burrow_home_store_show_labels"
+local DEFAULT_HOME_STORE_LABEL_SIZE = 100
+local MIN_HOME_STORE_LABEL_SIZE = 10
+local MAX_HOME_STORE_LABEL_SIZE = 100
+local NAVIGATION_FOOTER_HEIGHT = 56
+
+local function navigationLabelSizePercent()
+    local value = tonumber(G_reader_settings:readSetting(
+        HOME_STORE_LABEL_SIZE_SETTING,
+        DEFAULT_HOME_STORE_LABEL_SIZE
+    )) or DEFAULT_HOME_STORE_LABEL_SIZE
+    value = math.floor(value + 0.5)
+    return math.max(MIN_HOME_STORE_LABEL_SIZE, math.min(MAX_HOME_STORE_LABEL_SIZE, value))
+end
+
+local function navigationLabelsVisible()
+    local value = G_reader_settings:readSetting(HOME_STORE_SHOW_LABELS_SETTING)
+    return value == nil or value == true
+end
+
+function Theme.getNavigationFooterHeight()
+    -- Use one screen-scaled height in both the library and Store. Relying on
+    -- each menu's native page-info widget made the footer jump in size while
+    -- switching between Home and Store.
+    return math.max(1, Screen:scaleBySize(NAVIGATION_FOOTER_HEIGHT))
+end
+
 -- ---------------------------------------------------------------------------
 -- Rounded cover mask
 -- ---------------------------------------------------------------------------
@@ -285,6 +313,7 @@ local NavTab = InputContainer:extend {
     callback = nil,
     hold_callback = nil,
     label_size_percent = 100,
+    indicator_width = nil,
 }
 
 function NavTab:init()
@@ -298,9 +327,10 @@ function NavTab:init()
     local label = TextWidget:new {
         text = self.label,
         face = Font:getFace("smallinfofont", label_size),
+        bold = false,
     }
     local label_width = label:getSize().w
-    local line_width = math.min(
+    local line_width = self.indicator_width or math.min(
         math.floor(self.width * 0.52),
         label_width + Screen:scaleBySize(4)
     )
@@ -426,9 +456,7 @@ end
 
 function Theme.buildFooter(menu, options)
     options = options or {}
-    local footer_height = options.footer_height
-        or (menu.page_info and menu.page_info:getSize().h)
-        or Screen:scaleBySize(56)
+    local footer_height = options.footer_height or Theme.getNavigationFooterHeight()
     local show_labels = options.show_labels ~= false
     local line_height = math.max(1, Screen:scaleBySize(1))
     local dots_height = show_labels
@@ -458,6 +486,19 @@ function Theme.buildFooter(menu, options)
 
     local nav_width = math.floor((menu.screen_w or Screen:getWidth()) * 0.88)
     local tab_width = math.max(1, math.floor(nav_width / 2))
+    local label_size_percent = options.label_size_percent or navigationLabelSizePercent()
+    local base_label_size = math.max(14, math.floor(nav_height * 0.42))
+    local label_size = math.max(
+        8,
+        math.floor(base_label_size * label_size_percent / 100 + 0.5)
+    )
+    local label_face = Font:getFace("smallinfofont", label_size)
+    local home_probe = TextWidget:new { text = options.home_label or "Home", face = label_face, bold = false }
+    local store_probe = TextWidget:new { text = options.store_label or "Store", face = label_face, bold = false }
+    local indicator_width = math.min(
+        math.floor(tab_width * 0.52),
+        math.max(home_probe:getSize().w, store_probe:getSize().w) + Screen:scaleBySize(4)
+    )
     local active = options.active or "home"
     local home_tab = NavTab:new {
         width = tab_width,
@@ -466,7 +507,8 @@ function Theme.buildFooter(menu, options)
         active = active == "home",
         callback = options.home_callback,
         hold_callback = options.home_hold_callback,
-        label_size_percent = options.label_size_percent or 100,
+        label_size_percent = label_size_percent,
+        indicator_width = indicator_width,
     }
     local store_tab = NavTab:new {
         width = tab_width,
@@ -475,7 +517,8 @@ function Theme.buildFooter(menu, options)
         active = active == "store",
         callback = options.store_callback,
         hold_callback = options.store_hold_callback,
-        label_size_percent = options.label_size_percent or 100,
+        label_size_percent = label_size_percent,
+        indicator_width = indicator_width,
     }
     local divider = LineWidget:new {
         background = Blitbuffer.COLOR_LIGHT_GRAY,
@@ -516,10 +559,12 @@ function Theme.installStoreFooter(menu)
         return
     end
 
-    local footer_height = original_page_info:getSize().h
+    local footer_height = Theme.getNavigationFooterHeight()
     local root, dots = Theme.buildFooter(menu, {
         footer_height = footer_height,
         active = "store",
+        show_labels = navigationLabelsVisible(),
+        label_size_percent = navigationLabelSizePercent(),
         home_callback = function()
             if menu.close_callback then
                 menu.close_callback()
