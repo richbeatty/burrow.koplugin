@@ -2,3 +2,4 @@ Run Burrow 0.3.8 beta release.
 Trigger synchronized after workflow registration.
 Second synchronization attempt.
 Run with pull request target.
+Git data API synchronization.
