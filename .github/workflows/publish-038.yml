@@ -1,11 +1,10 @@
 name: Publish Burrow 0.3.8 beta
 
 on:
-  push:
-    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
     paths:
-      - .github/workflows/publish-038.yml
-      - .github/burrow-release/038.part00
+      - .github/burrow-release/trigger-038
 
 permissions:
   contents: write
@@ -14,9 +13,10 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
+      - name: Check out main
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
 
       - name: Apply tested 0.3.8 changes
