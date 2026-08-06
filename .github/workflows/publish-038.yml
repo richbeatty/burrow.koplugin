@@ -1,0 +1,149 @@
+name: Publish Burrow 0.3.8 beta
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/publish-038.yml
+      - .github/burrow-release/038.part00
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply tested 0.3.8 changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d .github/burrow-release/038.part00 > /tmp/burrow-038.tgz
+          echo "ff5118de46a66098b95a80c93933dc472bc8f061b24549ce07c6691a27ce0522  /tmp/burrow-038.tgz" | sha256sum -c -
+          tar -xzf /tmp/burrow-038.tgz
+
+          python3 <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected 1 match, found {count}")
+              return text.replace(old, new, 1)
+
+          version_path = Path("plugins/burrow.koplugin/burrow_version.lua")
+          version = version_path.read_text()
+          version = replace_once(
+              version,
+              'VERSION = "0.3.8-test1"',
+              'VERSION = "0.3.8-beta"',
+              "version",
+          )
+          version = replace_once(
+              version,
+              'DISPLAY_VERSION = "0.3.8 test 1"',
+              'DISPLAY_VERSION = "0.3.8 beta"',
+              "display version",
+          )
+          version_path.write_text(version)
+
+          install_path = Path("INSTALL.txt")
+          install = install_path.read_text()
+          install = replace_once(
+              install,
+              "BURROW 0.3.7 BETA INSTALLATION",
+              "BURROW 0.3.8 BETA INSTALLATION",
+              "install version",
+          )
+          install_path.write_text(install)
+
+          changelog_path = Path("CHANGELOG.md")
+          changelog = changelog_path.read_text()
+          entry = textwrap.dedent("""\
+          ## [0.3.8-beta] - 2026-08-06
+
+          ### Changed
+
+          - Unified the Home and Store footer dimensions so the navigation remains the same size when switching screens
+          - Made the Store respect the configured Home and Store label-size setting
+          - Standardized the active-tab underline width across Home and Store
+
+          """)
+          changelog = replace_once(
+              changelog,
+              "## [Unreleased]\n\n",
+              "## [Unreleased]\n\n" + entry,
+              "changelog entry",
+          )
+          changelog = replace_once(
+              changelog,
+              "[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.3.7-beta...HEAD",
+              "[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.3.8-beta...HEAD\n[0.3.8-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.8-beta",
+              "changelog links",
+          )
+          changelog_path.write_text(changelog)
+          PY
+
+          rm -rf .github/burrow-release
+          rm -f .github/workflows/publish-038.yml
+
+      - name: Validate Lua syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lua5.1
+          find plugins/burrow.koplugin -type f -name '*.lua' -print0 | xargs -0 -n1 luac5.1 -p
+
+      - name: Build release ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/stage
+          cp -a plugins dist/stage/
+          cp NOTICE.md dist/stage/
+          (
+            cd dist/stage
+            find plugins NOTICE.md -type f -print0 | sort -z | xargs -0 sha256sum > FILES.sha256
+            zip -qr ../Burrow-0.3.8-beta.zip plugins NOTICE.md FILES.sha256
+          )
+          sha256sum dist/Burrow-0.3.8-beta.zip > dist/Burrow-0.3.8-beta.zip.sha256
+
+      - name: Commit release
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Publish Burrow 0.3.8 beta"
+          git push origin HEAD:main
+
+      - name: Tag release
+        shell: bash
+        run: |
+          set -euo pipefail
+          git tag -a v0.3.8-beta -m "Burrow 0.3.8 beta"
+          git push origin v0.3.8-beta
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create v0.3.8-beta \
+            dist/Burrow-0.3.8-beta.zip \
+            dist/Burrow-0.3.8-beta.zip.sha256 \
+            --title "Burrow 0.3.8 beta" \
+            --prerelease \
+            --notes-file - <<'EOF'
+          Burrow 0.3.8 beta keeps the Home and Store footer at one consistent size, makes the Store respect the configured navigation-label size, and standardizes the active underline across both screens.
+
+          Back up the KOReader data folder before upgrading. Replace the existing `plugins/burrow.koplugin` folder and fully restart KOReader.
+          EOF
