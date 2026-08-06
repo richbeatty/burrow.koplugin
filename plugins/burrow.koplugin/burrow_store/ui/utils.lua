@@ -11,6 +11,7 @@ local VerticalSpan = require("ui/widget/verticalspan")
 local CenterContainer = require("ui/widget/container/centercontainer")
 local util = require("util")
 local _ = require("gettext")
+local Theme = require("burrow_store.ui.theme")
 
 local UIUtils = {}
 
@@ -60,11 +61,16 @@ function UIUtils.createPlaceholderCover(width, height, status)
 	if font_size < 10 then font_size = 10 end
 	if font_size > 14 then font_size = 14 end
 
-	local icon_widget = TextWidget:new {
-		text = icon,
-		face = Font:getFace("infofont", font_size * 2),
-		fgcolor = text_color,
-	}
+	local icon_widget
+	if status == "loading" then
+		icon_widget = Theme.activityRing(math.max(24, math.floor(height * 0.28)), 1)
+	else
+		icon_widget = TextWidget:new {
+			text = icon,
+			face = Font:getFace("infofont", font_size * 2),
+			fgcolor = text_color,
+		}
+	end
 
 	local text_widget = TextWidget:new {
 		text = display_text,
@@ -77,7 +83,7 @@ function UIUtils.createPlaceholderCover(width, height, status)
 		height = height,
 		padding = 0,
 		margin = 0,
-		bordersize = Size.border.default or 2,
+		bordersize = 0,
 		background = placeholder_bg_color,
 		CenterContainer:new {
 			dimen = Geom:new {

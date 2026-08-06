@@ -23,6 +23,7 @@ local SettingsDialogs = require("burrow_store.ui.dialogs.settings_dialogs")
 
 -- Import state manager
 local StateManager = require("burrow_store.core.state_manager")
+local DownloadManager = require("burrow_store.core.download_manager")
 
 local OPDS = WidgetContainer:extend {
     name = "burrowstore",
@@ -54,6 +55,7 @@ function OPDS:init()
     self.servers = self.opds_settings:readSetting("servers", Constants.DEFAULT_SERVERS)
     self.downloads = self.opds_settings:readSetting("downloads", {})
     self.pending_syncs = self.opds_settings:readSetting("pending_syncs", {})
+    DownloadManager.repairDownloadQueue(self)
 
     if not self.embedded then
         self:onDispatcherRegisterActions()

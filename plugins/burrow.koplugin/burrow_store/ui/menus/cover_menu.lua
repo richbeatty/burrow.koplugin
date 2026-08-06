@@ -4,6 +4,7 @@ local OPDSGridMenu = require("burrow_store.ui.menus.grid_menu")
 local UIManager = require("ui/uimanager")
 local Debug = require("burrow_store.utils.debug")
 local StateManager = require("burrow_store.core.state_manager")
+local Theme = require("burrow_store.ui.theme")
 
 local OPDSCoverMenu = Menu:extend {
     title_shrink_font_to_fit = true,
@@ -12,7 +13,26 @@ local OPDSCoverMenu = Menu:extend {
 }
 
 function OPDSCoverMenu:init()
+    -- A re-init after rotation or returning to the Store root creates a fresh
+    -- Menu widget tree, so the footer state must be rebuilt too.
+    self._burrow_store_footer = nil
+
+    -- Menu:init normally builds the first page before a custom footer can be
+    -- attached. Suppress that first pass, install Burrow's footer, then build
+    -- the page once with the final dimensions.
+    local original_path_items = self.path_items
+    local suppress_initial_update = original_path_items == nil
+    if suppress_initial_update then
+        self.path_items = {}
+    end
     Menu.init(self)
+    if suppress_initial_update then
+        self.path_items = nil
+    else
+        self.path_items = original_path_items
+    end
+    Theme.installStoreFooter(self)
+    self:updateItems(1, true)
 end
 
 function OPDSCoverMenu:_debugLog(...)
@@ -117,8 +137,11 @@ function OPDSCoverMenu:updateItems(select_number)
         self._last_mode_had_covers = false
         self._last_display_mode = nil
 
-        -- Call standard Menu's updateItems directly
-        return Menu.updateItems(self, select_number)
+        -- Standard Menu:updatePageInfo may re-show the return arrow, so refresh
+        -- Burrow's footer after the base update has finished.
+        local result = Menu.updateItems(self, select_number)
+        Theme.updateStoreFooter(self)
+        return result
     end
 end
 

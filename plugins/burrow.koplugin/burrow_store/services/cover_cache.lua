@@ -5,6 +5,10 @@ local bit = require("bit")
 local CoverCache = {}
 
 local CACHE_DIR = DataStorage:getDataDir() .. "/cache/burrow_store/covers"
+local writes_since_prune = 0
+local last_prune_at = 0
+local PRUNE_EVERY_WRITES = 8
+local PRUNE_INTERVAL_SECONDS = 60
 
 local function ensureDir(path)
 	if lfs.attributes(path, "mode") == "directory" then
@@ -143,7 +147,14 @@ function CoverCache.put(url, content, max_bytes)
 
 	local ok = writeFile(cachePath(url), content)
 	if ok and max_bytes and max_bytes > 0 then
-		pruneToMaxBytes(max_bytes)
+		writes_since_prune = writes_since_prune + 1
+		local now = os.time()
+		if writes_since_prune >= PRUNE_EVERY_WRITES
+				or now - last_prune_at >= PRUNE_INTERVAL_SECONDS then
+			pruneToMaxBytes(max_bytes)
+			writes_since_prune = 0
+			last_prune_at = now
+		end
 	end
 	return ok
 end

@@ -24,6 +24,91 @@ local StateManager = require("burrow_store.core.state_manager")
 
 local DownloadManager = {}
 
+local function getStoreManager(owner)
+	if not owner then return nil end
+	if owner.opds_settings then
+		return owner
+	end
+	if owner._manager and owner._manager.opds_settings then
+		return owner._manager
+	end
+	if owner._manager and owner._manager._manager and owner._manager._manager.opds_settings then
+		return owner._manager._manager
+	end
+	return nil
+end
+
+local function persistDownloadQueue(owner)
+	local manager = getStoreManager(owner)
+	StateManager.getInstance():markDirty()
+	if manager and manager.opds_settings then
+		manager.downloads = owner.downloads
+		manager.opds_settings:saveSetting("downloads", owner.downloads)
+		manager.opds_settings:flush()
+	end
+end
+
+-- Compact, validate, and de-duplicate a persisted queue. This also repairs
+-- sparse Lua tables, which can otherwise leave an item that cannot be cleared
+-- reliably through array operations.
+function DownloadManager.repairDownloadQueue(owner)
+	local queue = type(owner and owner.downloads) == "table" and owner.downloads or {}
+	local numeric_keys = {}
+	for key in pairs(queue) do
+		if type(key) == "number" and key >= 1 and key == math.floor(key) then
+			table.insert(numeric_keys, key)
+		end
+	end
+	table.sort(numeric_keys)
+
+	local repaired = {}
+	local seen = {}
+	for _, key in ipairs(numeric_keys) do
+		local item = queue[key]
+		if type(item) == "table"
+				and type(item.file) == "string" and item.file ~= ""
+				and type(item.url) == "string" and item.url ~= "" then
+			local identity = item.file .. "\0" .. item.url
+			if not seen[identity] then
+				seen[identity] = true
+				table.insert(repaired, item)
+			end
+		end
+	end
+
+	local changed = #numeric_keys ~= #repaired
+	if not changed then
+		for index, key in ipairs(numeric_keys) do
+			if key ~= index or queue[key] ~= repaired[index] then
+				changed = true
+				break
+			end
+		end
+	end
+	for key in pairs(queue) do
+		if type(key) ~= "number" then
+			changed = true
+			break
+		end
+	end
+
+	if type(owner.downloads) ~= "table" then
+		owner.downloads = queue
+		changed = true
+	end
+	if changed then
+		for key in pairs(queue) do
+			queue[key] = nil
+		end
+		for index, item in ipairs(repaired) do
+			queue[index] = item
+		end
+		owner.downloads = queue
+		persistDownloadQueue(owner)
+	end
+	return changed
+end
+
 -- Extract filetype from an acquisition link
 -- @param link table Acquisition link with href and type
 -- @return string|nil File extension or nil if unsupported
@@ -170,6 +255,25 @@ function DownloadManager.downloadFile(browser, local_path, remote_url, username,
 	return false
 end
 
+-- Remove queued copies of a file after it has been downloaded directly from
+-- a catalog or from the individual queue screen.
+function DownloadManager.removeMatchingFromDownloadQueue(browser, local_path, remote_url)
+	DownloadManager.repairDownloadQueue(browser)
+	local removed = false
+	for index = #browser.downloads, 1, -1 do
+		local item = browser.downloads[index]
+		if item and item.file == local_path and item.url == remote_url then
+			table.remove(browser.downloads, index)
+			removed = true
+		end
+	end
+	if removed then
+		browser.download_list_updated = true
+		persistDownloadQueue(browser)
+	end
+	return removed
+end
+
 -- Check if file exists and prompt user, then download
 -- @param browser table OPDSBrowser instance
 -- @param local_path string Local file path to save to
@@ -180,7 +284,12 @@ end
 function DownloadManager.checkDownloadFile(browser, local_path, remote_url, username, password, caller_callback)
 	local function download()
 		UIManager:scheduleIn(Constants.UI_TIMING.DOWNLOAD_SCHEDULE_DELAY, function()
-			DownloadManager.downloadFile(browser, local_path, remote_url, username, password, caller_callback)
+			DownloadManager.downloadFile(browser, local_path, remote_url, username, password, function(downloaded_path)
+				DownloadManager.removeMatchingFromDownloadQueue(browser, downloaded_path, remote_url)
+				if caller_callback then
+					caller_callback(downloaded_path)
+				end
+			end)
 		end)
 		UIManager:show(InfoMessage:new {
 			text = _("Downloading…"),
@@ -205,6 +314,7 @@ end
 -- @param browser table OPDSBrowser instance
 -- @return number Count of successfully downloaded files
 function DownloadManager.downloadDownloadList(browser)
+	DownloadManager.repairDownloadQueue(browser)
 	local info = InfoMessage:new { text = _("Downloading… (tap to cancel)") }
 	UIManager:show(info)
 	UIManager:forceRePaint()
@@ -244,7 +354,7 @@ function DownloadManager.downloadDownloadList(browser)
 	if dl_count > 0 then
 		browser:updateDownloadListItemTable()
 		browser.download_list_updated = true
-		StateManager.getInstance():markDirty()
+		persistDownloadQueue(browser)
 		UIManager:show(InfoMessage:new {
 			text = T(N_("1 book downloaded", "%1 books downloaded", dl_count), dl_count)
 		})
@@ -334,26 +444,38 @@ end
 -- @param browser table OPDSBrowser instance
 -- @param download_item table Item with file, url, username, password, info, catalog
 function DownloadManager.addToDownloadQueue(browser, download_item)
+	DownloadManager.repairDownloadQueue(browser)
+	for _, existing in ipairs(browser.downloads) do
+		if existing.file == download_item.file and existing.url == download_item.url then
+			return false
+		end
+	end
 	table.insert(browser.downloads, download_item)
-	StateManager.getInstance():markDirty()
+	persistDownloadQueue(browser)
+	return true
 end
 
 -- Remove item from download queue
 -- @param browser table OPDSBrowser instance
 -- @param index number Index of item to remove
 function DownloadManager.removeFromDownloadQueue(browser, index)
+	DownloadManager.repairDownloadQueue(browser)
+	if type(index) ~= "number" or not browser.downloads[index] then
+		return false
+	end
 	table.remove(browser.downloads, index)
-	StateManager.getInstance():markDirty()
+	persistDownloadQueue(browser)
+	return true
 end
 
 -- Clear all items from download queue
 -- @param browser table OPDSBrowser instance
 function DownloadManager.clearDownloadQueue(browser)
-	for i in ipairs(browser.downloads) do
-		browser.downloads[i] = nil
+	for key in pairs(browser.downloads) do
+		browser.downloads[key] = nil
 	end
 	browser.download_list_updated = true
-	StateManager.getInstance():markDirty()
+	persistDownloadQueue(browser)
 end
 
 return DownloadManager

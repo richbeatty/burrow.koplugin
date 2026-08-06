@@ -1,4 +1,5 @@
 local UIUtils = require("burrow_store.ui.utils")
+local Theme = require("burrow_store.ui.theme")
 local Blitbuffer = require("ffi/blitbuffer")
 local Device = require("device")
 local Font = require("ui/font")
@@ -141,7 +142,7 @@ function OPDSListMenuItem:init()
             w = self.cover_width,
             h = self.cover_height,
         },
-        inner_cover_widget
+        Theme.roundedCover(inner_cover_widget, self.cover_width, self.cover_height)
     }
 
     -- Calculate spacing and dimensions
@@ -514,44 +515,13 @@ function OPDSListMenu:updateItems(select_number)
 
     -- Update page info
     self:updatePageInfo(select_number)
+    Theme.updateStoreFooter(self)
 
     -- Refresh display
     UIManager:setDirty(self.show_parent, function()
         local refresh_dimen = old_dimen and old_dimen:combine(self.dimen) or self.dimen
         return "ui", refresh_dimen
     end)
-
-    -- Update page info with custom text
-    if self.page_info then
-        local custom_text = "≡ " .. self.page .. "/" .. self.page_num .. " (" .. self.perpage .. " items)"
-
-        -- Find and replace the text widget
-        for i = 1, 10 do
-            if self.page_info[i] and type(self.page_info[i]) == "table" and self.page_info[i].text then
-                -- Get the original widget's properties (with fallbacks)
-                local old_widget = self.page_info[i]
-                local face = old_widget.face or Font:getFace("smallinfofont")
-                local fgcolor = old_widget.fgcolor or Blitbuffer.COLOR_BLACK
-
-                -- Free the old widget
-                if old_widget.free then
-                    old_widget:free()
-                end
-
-                -- Create new TextWidget with updated text
-                self.page_info[i] = TextWidget:new {
-                    text = custom_text,
-                    face = face,
-                    fgcolor = fgcolor,
-                }
-
-                -- Mark dirty for full refresh
-                UIManager:setDirty(self.show_parent, "ui")
-
-                break
-            end
-        end
-    end
 
     -- Schedule cover loading
     if #self._items_to_update > 0 then
@@ -564,7 +534,7 @@ function OPDSListMenu:updateItems(select_number)
             end
         end
 
-        UIManager:scheduleIn(1, self._scheduled_cover_load)
+        UIManager:nextTick(self._scheduled_cover_load)
     end
 end
 

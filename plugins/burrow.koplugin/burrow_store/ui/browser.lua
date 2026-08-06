@@ -47,6 +47,10 @@ local StateManager = require("burrow_store.core.state_manager")
 
 -- Import the debug utility
 local Debug = require("burrow_store.utils.debug")
+local Theme = require("burrow_store.ui.theme")
+local BurrowTitleBar = require("titlebar")
+local LibraryCoverMenu = require("covermenu")
+local FileManager = require("apps/filemanager/filemanager")
 
 -- Changed from Menu:extend to OPDSCoverMenu:extend to support cover images
 local OPDSBrowser = OPDSCoverMenu:extend {
@@ -71,18 +75,150 @@ local OPDSBrowser = OPDSCoverMenu:extend {
 function OPDSBrowser:init()
     self.item_table = self:genItemTableFromRoot()
     self.catalog_title = nil
-    self.title_bar_left_icon = Constants.ICONS.MENU
-    self.onLeftButtonTap = function()
-        self:showOPDSMenu()
+    self.facet_groups = nil
+
+    local function leaveStore(callback)
+        if self.close_callback then
+            self.close_callback()
+        else
+            UIManager:close(self)
+        end
+        if callback then
+            UIManager:nextTick(callback)
+        end
     end
 
+    -- Reuse the exact title-bar class installed by Burrow's Top bar settings.
+    -- This keeps Store icon visibility, sizing, and logo-only mode identical to
+    -- the library instead of creating blank icon slots that render as warnings.
+    local StoreTitleBar = LibraryCoverMenu._burrow_flexible_titlebar_class
+        or BurrowTitleBar
+    self.custom_title_bar = StoreTitleBar:new {
+        show_parent = self,
+        title = "",
+        subtitle = "",
+        left1_icon = "home",
+        left1_icon_tap_callback = function()
+            leaveStore()
+        end,
+        left1_icon_hold_callback = function()
+            leaveStore(function()
+                if FileManager.instance and FileManager.instance.onShowFolderMenu then
+                    FileManager.instance:onShowFolderMenu()
+                end
+            end)
+        end,
+        left2_icon = "favorites",
+        left2_icon_tap_callback = function()
+            leaveStore(function()
+                if FileManager.instance and FileManager.instance.collections then
+                    FileManager.instance.collections:onShowColl()
+                end
+            end)
+        end,
+        left2_icon_hold_callback = function()
+            leaveStore(function()
+                if FileManager.instance and FileManager.instance.folder_shortcuts then
+                    FileManager.instance.folder_shortcuts:onShowFolderShortcutsDialog()
+                end
+            end)
+        end,
+        left3_icon = "history",
+        left3_icon_tap_callback = function()
+            leaveStore(function()
+                if FileManager.instance and FileManager.instance.history then
+                    FileManager.instance.history:onShowHist()
+                end
+            end)
+        end,
+        left3_icon_hold_callback = false,
+        center_icon = "burrow.hero",
+        center_icon_tap_callback = function()
+            self:showCurrentStoreMenu()
+        end,
+        center_icon_hold_callback = function()
+            self:showOPDSMenu()
+        end,
+        right3_icon = "last_document",
+        right3_icon_tap_callback = function()
+            leaveStore(function()
+                if FileManager.instance and FileManager.instance.menu then
+                    FileManager.instance.menu:onOpenLastDoc()
+                end
+            end)
+        end,
+        right3_icon_hold_callback = false,
+        right2_icon = "go_up",
+        right2_icon_tap_callback = function()
+            if #self.paths > 0 then
+                self:onReturn()
+            else
+                leaveStore()
+            end
+        end,
+        right2_icon_hold_callback = function()
+            self:showCatalogs()
+        end,
+        right1_icon = "plus",
+        right1_icon_tap_callback = function()
+            self:showCurrentStoreMenu()
+        end,
+        right1_icon_hold_callback = false,
+    }
+    self.title_bar_left_icon = nil
     self.title_bar_right_icon = nil
-    self.facet_groups = nil
     OPDSCoverMenu.init(self)
 end
 
 function OPDSBrowser:_debugLog(...)
     Debug.log("Browser:", ...)
+end
+
+function OPDSBrowser:showCurrentStoreMenu()
+    if #self.paths == 0 then
+        return self:showOPDSMenu()
+    end
+    if self.facet_groups or self.search_url then
+        return self:showFacetMenu()
+    end
+    return self:showCatalogMenu()
+end
+
+function OPDSBrowser:showCatalogs()
+    self.paths = {}
+    self.catalog_title = nil
+    self.root_catalog_title = nil
+    self.root_catalog_username = nil
+    self.root_catalog_password = nil
+    self.root_catalog_raw_names = nil
+    self.search_url = nil
+    self.facet_groups = nil
+    self:init()
+    return true
+end
+
+function OPDSBrowser:_runWithLoading(text, callback)
+    if self._catalog_loading then
+        return true
+    end
+    self._catalog_loading = true
+    local overlay = Theme.beginLoading(text or _("Loading Store…"))
+    self._catalog_loading_overlay = overlay
+
+    UIManager:nextTick(function()
+        local ok, result = pcall(callback)
+        Theme.endLoading(overlay)
+        self._catalog_loading_overlay = nil
+        self._catalog_loading = false
+        if not ok then
+            logger.warn("Burrow Store loading failed:", result)
+            UIManager:show(InfoMessage:new {
+                text = _("The Store could not finish loading.") .. "\n\n" .. tostring(result),
+                show_icon = false,
+            })
+        end
+    end)
+    return true
 end
 
 function OPDSBrowser:toggleViewMode()
@@ -220,7 +356,9 @@ function OPDSBrowser:genItemTableFromCatalog(catalog, item_url)
 end
 
 function OPDSBrowser:updateCatalog(item_url, paths_updated)
-    return NavigationHandler.updateCatalog(item_url, self, paths_updated)
+    return self:_runWithLoading(_("Loading Store…"), function()
+        return NavigationHandler.updateCatalog(item_url, self, paths_updated)
+    end)
 end
 
 function OPDSBrowser:appendCatalog(item_url)
@@ -377,25 +515,37 @@ function OPDSBrowser:onHoldReturn()
 end
 
 -- Menu action on next-page chevron tap (request and show more catalog entries)
-function OPDSBrowser:onNextPage(fill_only)
-    -- self.page_num comes from menu.lua
+function OPDSBrowser:_nextPageSync(fill_only)
     local page_num = self.page_num
-    -- fetch more entries until we fill out one page or reach the end
     while page_num == self.page_num do
         local hrefs = self.item_table.hrefs
         if hrefs and hrefs.next then
             if not self:appendCatalog(hrefs.next) then
-                break -- reach end of paging
+                break
             end
         else
             break
         end
     end
     if not fill_only then
-        -- We also *do* want to paginate, so call the base class.
         OPDSCoverMenu.onNextPage(self)
     end
     return true
+end
+
+function OPDSBrowser:onNextPage(fill_only)
+    -- Initial fill happens inside an already-visible loading state. User-driven
+    -- remote pagination gets its own indicator before the socket call begins.
+    if fill_only or self._catalog_loading then
+        return self:_nextPageSync(fill_only)
+    end
+    local hrefs = self.item_table and self.item_table.hrefs
+    if hrefs and hrefs.next then
+        return self:_runWithLoading(_("Loading more books…"), function()
+            return self:_nextPageSync(false)
+        end)
+    end
+    return OPDSCoverMenu.onNextPage(self)
 end
 
 function OPDSBrowser:showDownloadQueue()
@@ -495,6 +645,15 @@ function OPDSBrowser:getFileName(item)
         filename = nil
     end
     return util.replaceAllInvalidChars(filename), util.replaceAllInvalidChars(filename_orig)
+end
+
+function OPDSBrowser:onCloseWidget()
+    if self._catalog_loading_overlay then
+        Theme.endLoading(self._catalog_loading_overlay)
+        self._catalog_loading_overlay = nil
+    end
+    self._catalog_loading = false
+    return OPDSCoverMenu.onCloseWidget(self)
 end
 
 function OPDSBrowser:updateFieldInCatalog(item, name, value)

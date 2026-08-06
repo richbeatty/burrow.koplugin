@@ -96,35 +96,45 @@ end
 -- @param password string|nil Optional HTTP auth password
 -- @param debug_callback function|nil Optional debug logging callback
 -- @return table Parsed feed or nil on error
+local CATALOG_CACHE_TTL_SECONDS = 300
+
 function FeedFetcher.parseFeed(item_url, username, password, debug_callback)
-	local headers = FeedFetcher.fetchFeed(item_url, true, username, password)
-	local feed_last_modified = headers and headers["last-modified"]
-	local feed
-
-	if feed_last_modified then
-		local hash = "opds|catalog|" .. item_url .. "|" .. feed_last_modified
-		feed = CatalogCache:check(hash)
-		if feed then
-			if debug_callback then
-				debug_callback("Cache hit for", item_url)
-			end
-		else
-			if debug_callback then
-				debug_callback("Cache miss, fetching", item_url)
-			end
-			feed = FeedFetcher.fetchFeed(item_url, false, username, password)
-			if feed then
-				CatalogCache:insert(hash, feed)
-			end
+	-- The old path made a HEAD request before every GET. Most OPDS pages are
+	-- small, so that doubled connection and TLS setup time. Cache the parsed feed
+	-- briefly by URL and refresh it with a single GET when it expires.
+	local hash = "opds|catalog|" .. item_url
+	local cached = CatalogCache:check(hash)
+	if type(cached) == "table" and cached.catalog and cached.cached_at
+			and os.time() - cached.cached_at <= CATALOG_CACHE_TTL_SECONDS then
+		if debug_callback then
+			debug_callback("Catalog cache hit for", item_url)
 		end
-	else
-		feed = FeedFetcher.fetchFeed(item_url, false, username, password)
+		return cached.catalog
 	end
 
+	if debug_callback then
+		debug_callback("Fetching catalog", item_url)
+	end
+	local feed = FeedFetcher.fetchFeed(item_url, false, username, password)
 	if feed then
-		return OPDSParser:parse(feed)
+		local catalog = OPDSParser:parse(feed)
+		if catalog then
+			CatalogCache:insert(hash, {
+				catalog = catalog,
+				cached_at = os.time(),
+			})
+		end
+		return catalog
 	end
 
+	-- A stale in-memory feed is more useful than a blank page when a catalog
+	-- briefly times out or the device loses connectivity between pages.
+	if type(cached) == "table" and cached.catalog then
+		if debug_callback then
+			debug_callback("Using stale catalog cache for", item_url)
+		end
+		return cached.catalog
+	end
 	return nil
 end
 

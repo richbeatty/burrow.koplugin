@@ -4,6 +4,23 @@ All notable changes to Burrow will be documented here.
 
 ## [Unreleased]
 
+## [0.3.7-beta] - 2026-08-05
+
+### Changed
+
+- Improved Store cover loading and short-term catalog caching
+- Reduced unnecessary cover-cache pruning and network requests
+- Refined the Home and Store footer spacing and active underline
+
+### Fixed
+
+- Hid the return arrow while the Burrow Home and Store footer is active
+- Hid page indicators on single-page Store menus
+- Increased spacing between the Burrow icon and the first row of Store covers
+- Repaired and compacted the Store download queue at startup
+- Prevented duplicate queued downloads and removed completed direct downloads from the queue
+- Persisted cleared download queues immediately
+
 ## [0.3.6-beta] - 2026-08-05
 
 ### Added
@@ -144,7 +161,8 @@ All notable changes to Burrow will be documented here.
 
 - Initial unified Burrow library, Store, and reader-interface package
 
-[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.3.6-beta...HEAD
+[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.3.7-beta...HEAD
+[0.3.7-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.7-beta
 [0.3.6-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.6-beta
 [0.3.5-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.5-beta
 [0.3.4-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.4-beta

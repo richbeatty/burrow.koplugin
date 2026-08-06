@@ -37,21 +37,82 @@ function Batch:loadImages(urls)
             return
         end
 
-        local url = table.remove(pending_urls, 1)
-        if not url then
-            self.loading = false
-            return
-        end
+        -- Disk-cache hits are cheap. Handle a few per UI turn so a page of
+        -- previously seen covers fills quickly without starving e-ink repaint.
+        local cached_this_tick = 0
+        while true do
+            local url = table.remove(pending_urls, 1)
+            if not url then
+                self.loading = false
+                return
+            end
 
-        local stale_content = nil
-        if self.cover_cache_enabled ~= false then
-            local cached = CoverCache.get(url, ttl_seconds)
-            if cached and not cached.stale then
-                Debug.log("ImageLoader:", "Cover cache hit:", url)
-                if self.callback then
-                    self.callback(url, cached.content)
+            local stale_content = nil
+            if self.cover_cache_enabled ~= false then
+                local cached = CoverCache.get(url, ttl_seconds)
+                if cached and not cached.stale then
+                    Debug.log("ImageLoader:", "Cover cache hit:", url)
+                    if self.callback then
+                        self.callback(url, cached.content)
+                    end
+                    cached_this_tick = cached_this_tick + 1
+                    if #pending_urls == 0 then
+                        self.loading = false
+                        return
+                    elseif cached_this_tick < 4 then
+                        -- Continue through a small burst of cached covers.
+                    else
+                        UIManager:scheduleIn(Constants.UI_TIMING.IMAGE_BATCH_DELAY, run_image)
+                        return
+                    end
+                else
+                    Debug.log("ImageLoader:", "Cover cache miss:", url)
+                    if cached and cached.content then
+                        stale_content = cached.content
+                    end
+
+                    Debug.log("ImageLoader:", "Fetching cover with auth:", self.username and "yes" or "no")
+                    local success, content = HttpClient.getUrlContent(
+                        url,
+                        Constants.TIMEOUTS.IMAGE_LOAD,
+                        Constants.TIMEOUTS.IMAGE_MAX_TIME,
+                        self.username,
+                        self.password
+                    )
+                    if stop_loading then
+                        self.loading = false
+                        return
+                    end
+                    if success then
+                        if self.callback then
+                            self.callback(url, content)
+                        end
+                        CoverCache.put(url, content, max_bytes)
+                    else
+                        Debug.error("ImageLoader:", "Failed to download cover:", content or "unknown error")
+                        if stale_content and self.callback then
+                            self.callback(url, stale_content)
+                        end
+                    end
+                    if #pending_urls > 0 then
+                        UIManager:scheduleIn(Constants.UI_TIMING.IMAGE_BATCH_DELAY, run_image)
+                    else
+                        self.loading = false
+                    end
+                    return
                 end
-
+            else
+                Debug.log("ImageLoader:", "Fetching uncached cover")
+                local success, content = HttpClient.getUrlContent(
+                    url,
+                    Constants.TIMEOUTS.IMAGE_LOAD,
+                    Constants.TIMEOUTS.IMAGE_MAX_TIME,
+                    self.username,
+                    self.password
+                )
+                if success and self.callback then
+                    self.callback(url, content)
+                end
                 if #pending_urls > 0 then
                     UIManager:scheduleIn(Constants.UI_TIMING.IMAGE_BATCH_DELAY, run_image)
                 else
@@ -59,47 +120,6 @@ function Batch:loadImages(urls)
                 end
                 return
             end
-
-            Debug.log("ImageLoader:", "Cover cache miss:", url)
-            if cached and cached.content then
-                stale_content = cached.content
-            end
-        end
-
-        Debug.log("ImageLoader:", "Fetching cover with auth:", self.username and "yes" or "no")
-
-        local success, content = HttpClient.getUrlContent(
-            url,
-            Constants.TIMEOUTS.IMAGE_LOAD,
-            Constants.TIMEOUTS.IMAGE_MAX_TIME,
-            self.username,
-            self.password
-        )
-
-        if stop_loading then
-            self.loading = false
-            return
-        end
-
-        if success then
-            if self.callback then
-                self.callback(url, content)
-            end
-
-            if self.cover_cache_enabled ~= false then
-                CoverCache.put(url, content, max_bytes)
-            end
-        else
-            Debug.error("ImageLoader:", "Failed to download cover:", content or "unknown error")
-            if stale_content and self.callback then
-                self.callback(url, stale_content)
-            end
-        end
-
-        if #pending_urls > 0 then
-            UIManager:scheduleIn(Constants.UI_TIMING.IMAGE_BATCH_DELAY, run_image)
-        else
-            self.loading = false
         end
     end
 

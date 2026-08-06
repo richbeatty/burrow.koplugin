@@ -17,6 +17,33 @@ local StateManager = require("burrow_store.core.state_manager")
 
 local OPDSMenuBuilder = {}
 
+local function dialogAnchor(browser)
+    local title_bar = browser and (browser.title_bar or browser.custom_title_bar)
+    local button = title_bar and (
+        title_bar.center_button
+        or title_bar.right_button
+        or title_bar.left_button
+    )
+    if button and button.image and button.image.dimen then
+        return button.image.dimen
+    end
+    return title_bar and title_bar.dimen or nil
+end
+
+local function addChangeCatalogButton(buttons, browser, close_dialog)
+    table.insert(buttons, { {
+        text = _("Change catalog"),
+        callback = function()
+            if close_dialog then
+                UIManager:close(close_dialog())
+            end
+            browser:showCatalogs()
+        end,
+        align = "left",
+    } })
+    table.insert(buttons, {})
+end
+
 local function addDownloadQueueButton(buttons, browser, close_dialog)
 	table.insert(buttons, { {
 		text = T(_("Downloads (%1)"), #browser.downloads),
@@ -96,7 +123,7 @@ function OPDSMenuBuilder.buildOPDSMenu(browser)
 		buttons = buttons,
 		shrink_unneeded_width = true,
 		anchor = function()
-			return browser.title_bar.left_button.image.dimen
+			return dialogAnchor(browser)
 		end,
 	}
 	return dialog
@@ -111,6 +138,7 @@ function OPDSMenuBuilder.buildFacetMenu(browser, catalog_url, has_covers)
 	local buttons = {}
 	local dialog
 
+	addChangeCatalogButton(buttons, browser, function() return dialog end)
 	addDownloadQueueButton(buttons, browser, function() return dialog end)
 
 	-- Add view toggle option FIRST if we have covers
@@ -190,7 +218,7 @@ function OPDSMenuBuilder.buildFacetMenu(browser, catalog_url, has_covers)
 		buttons = buttons,
 		shrink_unneeded_width = true,
 		anchor = function()
-			return browser.title_bar.left_button.image.dimen
+			return dialogAnchor(browser)
 		end,
 	}
 
@@ -206,6 +234,7 @@ function OPDSMenuBuilder.buildCatalogMenu(browser, catalog_url, has_covers)
 	local buttons = {}
 	local dialog
 
+	addChangeCatalogButton(buttons, browser, function() return dialog end)
 	addDownloadQueueButton(buttons, browser, function() return dialog end)
 
 	-- Add view toggle if we have covers
@@ -243,7 +272,7 @@ function OPDSMenuBuilder.buildCatalogMenu(browser, catalog_url, has_covers)
 		buttons = buttons,
 		shrink_unneeded_width = true,
 		anchor = function()
-			return browser.title_bar.left_button.image.dimen
+			return dialogAnchor(browser)
 		end,
 	}
 

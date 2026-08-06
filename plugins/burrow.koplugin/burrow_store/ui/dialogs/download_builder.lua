@@ -256,11 +256,10 @@ function DownloadDialogBuilder.buildDownloadListItemDialog(download_list_browser
 
 	local function remove_item()
 		textviewer:onClose()
-		table.remove(download_list_browser._manager.downloads, item.idx)
+		DownloadManager.removeFromDownloadQueue(download_list_browser._manager, item.idx)
 		table.remove(download_list_browser.item_table, item.idx)
 		download_list_browser._manager:updateDownloadListItemTable(download_list_browser.item_table)
 		download_list_browser._manager.download_list_updated = true
-		download_list_browser._manager._manager.updated = true
 	end
 
 	local buttons_table = {
@@ -275,7 +274,9 @@ function DownloadDialogBuilder.buildDownloadListItemDialog(download_list_browser
 				text = _("Download"),
 				callback = function()
 					local function file_downloaded_callback(local_path)
-						remove_item()
+						textviewer:onClose()
+						download_list_browser._manager:updateDownloadListItemTable()
+						download_list_browser._manager.download_list_updated = true
 						download_list_browser._manager.file_downloaded_callback(local_path)
 					end
 					NetworkMgr:runWhenConnected(function()

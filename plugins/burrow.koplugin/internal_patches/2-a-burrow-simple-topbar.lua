@@ -202,9 +202,11 @@ local function patchBurrowTopBar(plugin)
                 local show_menu = not logo_only_right and enabled(SETTING_MENU)
                 local has_any_button = show_home or show_favorites or show_history
                     or show_logo or show_last_document or show_up or show_menu
+                local logo_bottom_clearance = logo_only_right and scaledBase(12) or 0
 
                 self.titlebar_height = has_any_button
-                    and (self.icon_size + self.icon_padding_top + self.icon_padding_bottom)
+                    and (self.icon_size + self.icon_padding_top + self.icon_padding_bottom
+                        + logo_bottom_clearance)
                     or 0
                 self.dimen = Geom:new {
                     x = 0,
@@ -262,22 +264,28 @@ local function patchBurrowTopBar(plugin)
                         true)
 
                     if logo_only_right then
-                        -- Dedicated minimal mode: only the bird remains. Put it
-                        -- near the right edge and lower it a few scaled pixels
-                        -- without changing the toolbar's measured height.
+                        -- Dedicated minimal mode: only the badger remains. Keep
+                        -- the icon in the upper portion of the bar and reserve
+                        -- clear space below it before the first row of covers.
                         local logo_right_margin = scaledBase(10)
                         local before = math.max(0,
                             self.width - logo_right_margin - self.center_button:getSize().w)
                         local after = math.max(0, logo_right_margin)
+                        local logo_area = Geom:new {
+                            x = 0,
+                            y = 0,
+                            w = self.width,
+                            h = math.max(1, self.titlebar_height - logo_bottom_clearance),
+                        }
                         self.center_button_container = LeftContainer:new {
-                            dimen = self.dimen,
+                            dimen = logo_area,
                             HorizontalGroup:new {
                                 HorizontalSpan:new { width = before },
                                 self.center_button,
                                 HorizontalSpan:new { width = after },
                             },
                         }
-                        self.center_button_container.overlap_offset = { 0, scaledBase(3) }
+                        self.center_button_container.overlap_offset = { 0, scaledBase(2) }
                     else
                         -- Keep the bird vertically centered when used as the
                         -- normal middle button, including reduced bar sizes.
@@ -393,6 +401,10 @@ local function patchBurrowTopBar(plugin)
             end
 
             debug.setupvalue(CoverMenu.setupLayout, titlebar_index, FlexibleTitleBar)
+            -- Expose the exact configured class so embedded Burrow screens can
+            -- use the same icon visibility, sizing, and logo-only mode.
+            CoverMenu._burrow_flexible_titlebar_class = FlexibleTitleBar
+            plugin._burrow_flexible_titlebar_class = FlexibleTitleBar
             CoverMenu._flexible_topbar_patch_applied = true
             logger.info("Burrow flexible top bar installed")
         else

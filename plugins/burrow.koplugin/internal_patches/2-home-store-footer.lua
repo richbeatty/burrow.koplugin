@@ -8,7 +8,7 @@ package.loaded[MODULE_KEY] = Module
     Burrow Home / Store navigation
 
     Adds a simple text-only Home and Store navigation bar with page indicators.
-    two-tab navigation bar on the Burrow HOME folder:
+    two-tab navigation bar throughout the Burrow library folder tree:
 
       Home  - the existing Burrow HOME folder
       Store - the selected Store catalog
@@ -22,8 +22,8 @@ package.loaded[MODULE_KEY] = Module
     catalog. Existing selections are migrated automatically.
 
     The Home and Store label size is adjustable from the Burrow display
-    settings. The original Burrow footer is restored automatically outside the HOME
-    folder. This patch never attaches the same widget to two live container trees.
+    settings. The original Burrow footer is restored automatically outside the configured
+    library folder tree. This patch never attaches the same widget to two live container trees.
 --]]
 
 
@@ -41,6 +41,7 @@ local DEFAULT_AUTO_HIDE_LABELS = false
 
 local function patchBurrowFooter(plugin)
     local Blitbuffer = require("ffi/blitbuffer")
+    local BottomContainer = require("ui/widget/container/bottomcontainer")
     local ButtonDialog = require("ui/widget/buttondialog")
     local CenterContainer = require("ui/widget/container/centercontainer")
     local Font = require("ui/font")
@@ -53,6 +54,7 @@ local function patchBurrowFooter(plugin)
     local LineWidget = require("ui/widget/linewidget")
     local InputContainer = require("ui/widget/container/inputcontainer")
     local Menu = require("ui/widget/menu")
+    local OverlapGroup = require("ui/widget/overlapgroup")
     local PluginLoader = require("pluginloader")
     local Screen = require("device").screen
     local TextWidget = require("ui/widget/textwidget")
@@ -380,13 +382,12 @@ local function patchBurrowFooter(plugin)
         end
 
         if self.active then
-            bb:paintRoundedRect(
+            bb:paintRect(
                 x,
                 y,
                 self.width,
                 self.height,
-                Blitbuffer.COLOR_BLACK,
-                math.floor(self.height / 2)
+                Blitbuffer.COLOR_BLACK
             )
         end
     end
@@ -401,40 +402,42 @@ local function patchBurrowFooter(plugin)
     }
 
     function NavTab:init()
-        local indicator_height = math.max(2, Screen:scaleBySize(2))
-        local indicator_width = math.max(
-            Screen:scaleBySize(30),
-            math.floor(self.width * 0.24)
-        )
+        local indicator_height = math.max(1, Screen:scaleBySize(1))
+        local bottom_inset = math.max(3, Screen:scaleBySize(3))
         local base_label_size = math.max(14, math.floor(self.height * 0.42))
         local label_size = math.max(8, math.floor(base_label_size * getLabelSize() / 100 + 0.5))
-        local label_gap = math.max(2, math.floor(self.height * 0.08))
 
         local label = TextWidget:new {
             text = self.label,
             face = Font:getFace("smallinfofont", label_size),
             bold = false,
         }
-        local indicator = TabIndicator:new {
-            width = indicator_width,
-            height = indicator_height,
-            active = self.active,
-        }
-        local contents = VerticalGroup:new {
-            align = "center",
-            label,
-            VerticalSpan:new { width = label_gap },
-            indicator,
-        }
-
-        self[1] = CenterContainer:new {
-            dimen = Geom:new {
-                w = self.width,
-                h = self.height,
+        local indicator_width = math.min(
+            math.floor(self.width * 0.52),
+            label:getSize().w + Screen:scaleBySize(4)
+        )
+        local dimen = Geom:new { w = self.width, h = self.height }
+        local label_height = math.max(1, self.height - indicator_height - bottom_inset)
+        self[1] = OverlapGroup:new {
+            dimen = dimen,
+            CenterContainer:new {
+                dimen = Geom:new { w = self.width, h = label_height },
+                label,
             },
-            contents,
+            BottomContainer:new {
+                dimen = dimen,
+                VerticalGroup:new {
+                    align = "center",
+                    TabIndicator:new {
+                        width = indicator_width,
+                        height = indicator_height,
+                        active = self.active,
+                    },
+                    VerticalSpan:new { width = bottom_inset },
+                },
+            },
         }
-        self.dimen = self[1]:getSize()
+        self.dimen = dimen
         self.ges_events = {
             TapHomeStoreTab = {
                 GestureRange:new {
@@ -483,6 +486,9 @@ local function patchBurrowFooter(plugin)
         local first = 1
         if total > count then
             first = math.max(1, math.min(current - math.floor(count / 2), total - count + 1))
+        end
+        if total <= 1 then
+            return {}, current
         end
         local pages = {}
         for value = first, first + count - 1 do
@@ -647,6 +653,12 @@ local function patchBurrowFooter(plugin)
         return root, dots
     end
 
+    local function hideReturnArrow(menu)
+        if menu and menu.page_return_arrow and menu.page_return_arrow.hide then
+            menu.page_return_arrow:hide()
+        end
+    end
+
     local function activateHomeFooter(menu)
         if menu._home_store_active then
             return
@@ -657,9 +669,11 @@ local function patchBurrowFooter(plugin)
         end
 
         state.page_controls[1] = state.custom_container
+        state.footer[2] = state.empty_page_return
         state.footer[5] = state.empty_footer_line
         menu.page_info = state.custom_root
         menu._home_store_active = true
+        hideReturnArrow(menu)
 
         if menu.cur_folder_text then
             menu.cur_folder_text:setText("")
@@ -667,6 +681,9 @@ local function patchBurrowFooter(plugin)
         end
         if state.page_controls.resetLayout then
             state.page_controls:resetLayout()
+        end
+        if state.footer.resetLayout then
+            state.footer:resetLayout()
         end
         if menu.page_info.resetLayout then
             menu.page_info:resetLayout()
@@ -683,12 +700,16 @@ local function patchBurrowFooter(plugin)
         end
 
         state.page_controls[1] = state.original_page_controls_child
+        state.footer[2] = state.original_page_return
         state.footer[5] = state.original_footer_line
         menu.page_info = state.original_page_info
         menu._home_store_active = false
 
         if state.page_controls.resetLayout then
             state.page_controls:resetLayout()
+        end
+        if state.footer.resetLayout then
+            state.footer:resetLayout()
         end
         if menu.page_info.resetLayout then
             menu.page_info:resetLayout()
@@ -712,6 +733,7 @@ local function patchBurrowFooter(plugin)
         self._show_home_store_catalog_chooser = makeCatalogChooser
 
         local original_page_info = self.page_info
+        local original_page_return = footer[2]
         local original_page_controls_child = page_controls[1]
         local original_footer_line = footer[5]
         local footer_height = original_page_info:getSize().h
@@ -728,11 +750,13 @@ local function patchBurrowFooter(plugin)
             footer = footer,
             page_controls = page_controls,
             original_page_info = original_page_info,
+            original_page_return = original_page_return,
             original_page_controls_child = original_page_controls_child,
             original_footer_line = original_footer_line,
             custom_root = custom_root,
             custom_container = custom_container,
             dots = dots,
+            empty_page_return = HorizontalSpan:new { width = 0 },
             empty_footer_line = HorizontalSpan:new { width = 0 },
         }
 
@@ -755,6 +779,7 @@ local function patchBurrowFooter(plugin)
         if self._home_store_active then
             local state = self._home_store_state
             state.dots:setPage(self.page or 1, self.page_num or 1)
+            hideReturnArrow(self)
             if self.cur_folder_text then
                 self.cur_folder_text:setText("")
                 self.cur_folder_text:setMaxWidth(0)
