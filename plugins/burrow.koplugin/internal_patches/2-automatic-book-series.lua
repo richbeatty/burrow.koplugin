@@ -17,7 +17,7 @@ package.loaded[MODULE_KEY] = Module
     Also, if all books in the folder belong to the same series, grouping is skipped
     to avoid creating virtual folders inside your existing series folders.
 
-    You can enable/disable this feature from the File Browser settings menu under "Group book series into folders".
+    You can enable/disable this feature from Burrow Settings under Library > Organization.
 --]]
 
 local BD = require("ui/bidi")
@@ -80,6 +80,12 @@ local function getLibraryHome()
 end
 
 local RETURN_TILE_TOKEN = "__burrow_return_to_library_v3__"
+local RETURN_TILE_SETTING = "burrow_return_to_library_enabled"
+
+local function isReturnToLibraryEnabled()
+    local value = G_reader_settings:readSetting(RETURN_TILE_SETTING)
+    return value == nil or value == true
+end
 
 local function isReturnToLibraryItem(item)
     return item
@@ -106,6 +112,44 @@ local function makeReturnToLibraryItem()
         opened = false,
         attr = { mode = "directory" },
     }
+end
+
+-- Keep the Return to Library tile independent from automatic series grouping.
+-- This lets manually organized library folders use the same navigation tile.
+local function ensureReturnToLibraryItem(item_table, file_chooser)
+    if not item_table or not file_chooser then
+        return
+    end
+
+    -- Remove an existing tile first so refreshes cannot duplicate it and so it
+    -- disappears correctly when returning to the configured library home.
+    for i = #item_table, 1, -1 do
+        if isReturnToLibraryItem(item_table[i]) then
+            table.remove(item_table, i)
+        end
+    end
+
+    if not isReturnToLibraryEnabled() then
+        return
+    end
+
+    local home_dir = normalizePath(getLibraryHome())
+    local current_path = normalizePath(file_chooser.path)
+    if not current_path or not home_dir or current_path == home_dir then
+        return
+    end
+
+    local contains_books = false
+    for _, item in ipairs(item_table) do
+        if item.is_file or item.is_series_group then
+            contains_books = true
+            break
+        end
+    end
+
+    if contains_books then
+        table.insert(item_table, makeReturnToLibraryItem())
+    end
 end
 
 local function automaticSeriesPatch(plugin)
@@ -395,12 +439,20 @@ local function automaticSeriesPatch(plugin)
                                 center_x_ratio = 0.5,
                                 center_y_ratio = 0.5,
                             }
+                            -- Match the exact outer frame geometry used by normal
+                            -- book covers. The image dimensions already use the same
+                            -- 2:3 target and caption reserve; adding the same thin
+                            -- border makes book, physical-folder, and virtual-series
+                            -- covers occupy an identical visual footprint.
+                            local cover_border = Size.border.thin
+                            local border_total = cover_border * 2
                             return FrameContainer:new {
-                                width = cover_w,
-                                height = cover_h,
+                                width = cover_w + border_total,
+                                height = cover_h + border_total,
                                 margin = 0,
                                 padding = 0,
-                                bordersize = 0,
+                                bordersize = cover_border,
+                                color = Blitbuffer.COLOR_GRAY_3,
                                 image,
                             }
                         end
@@ -632,7 +684,9 @@ local function automaticSeriesPatch(plugin)
                 break
             end
         end
-        if contains_books and current_path and home_dir and current_path ~= home_dir then
+        if isReturnToLibraryEnabled()
+            and contains_books and current_path and home_dir and current_path ~= home_dir
+        then
             table.insert(final_table, makeReturnToLibraryItem())
         end
         
@@ -695,8 +749,10 @@ local function automaticSeriesPatch(plugin)
             end
         end
         
-        -- The return tile is always the final item in the series view.
-        table.insert(items, makeReturnToLibraryItem())
+        -- The return tile is the final item when Burrow navigation enables it.
+        if isReturnToLibraryEnabled() then
+            table.insert(items, makeReturnToLibraryItem())
+        end
 
         -- Tag this table as a virtual series view
         items.is_in_series_view = true
@@ -751,8 +807,11 @@ local function automaticSeriesPatch(plugin)
     -- Hook switchItemTable to process items BEFORE the original searches for itemmatch
     -- This ensures the correct page is calculated after grouping
     FileChooser.switchItemTable = function(file_chooser, new_title, new_item_table, itemnumber, itemmatch, new_subtitle)
-        if isEnabled() and new_item_table and not new_item_table.is_in_series_view then
-            AutomaticSeries:processItemTable(new_item_table, file_chooser)
+        if new_item_table and not new_item_table.is_in_series_view then
+            if isEnabled() then
+                AutomaticSeries:processItemTable(new_item_table, file_chooser)
+            end
+            ensureReturnToLibraryItem(new_item_table, file_chooser)
         end
         
         return old_switchItemTable(file_chooser, new_title, new_item_table, itemnumber, itemmatch, new_subtitle)
@@ -865,6 +924,10 @@ local function automaticSeriesPatch(plugin)
     end
     
     FileChooser.updateItems = function(file_chooser, ...)
+        if file_chooser.item_table and not file_chooser.item_table.is_in_series_view then
+            ensureReturnToLibraryItem(file_chooser.item_table, file_chooser)
+        end
+
         if not isEnabled() then
             current_series_group = nil
             return old_updateItems(file_chooser, ...)
@@ -899,36 +962,9 @@ local function automaticSeriesPatch(plugin)
         return old_updateItems(file_chooser, ...)
     end
     
-    -- Add menu item
-    local orig_CoverBrowser_addToMainMenu = plugin.addToMainMenu
-    
-    function plugin:addToMainMenu(menu_items)
-        orig_CoverBrowser_addToMainMenu(self, menu_items)
-        
-        -- Add to File browser settings
-        if not menu_items.filebrowser_settings then return end
-        
-        -- Check if menu item already exists using custom attribute
-        for _, item in ipairs(menu_items.filebrowser_settings.sub_item_table) do
-            if item._automatic_series_menu_item then
-                return -- Already added
-            end
-        end
-        
-        table.insert(menu_items.filebrowser_settings.sub_item_table, {
-            text = _("Group book series into folders"),
-            separator = true,
-            checked_func = isEnabled,
-            callback = function()
-                setEnabled(not isEnabled())
-                -- Refresh the file browser
-                if self.ui and self.ui.file_chooser then
-                    self.ui.file_chooser:refreshPath()
-                end
-            end,
-            _automatic_series_menu_item = true, -- Marker to detect duplicate additions
-        })
-    end
+    -- Configuration now lives in Burrow Settings > Library > Organization.
+    -- Do not inject a Burrow-only switch into KOReader's stock File Browser menu.
+
 end
 
 Module.apply = automaticSeriesPatch

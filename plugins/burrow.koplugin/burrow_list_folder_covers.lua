@@ -149,6 +149,34 @@ local function imageFromBook(path, width, height)
     }
 end
 
+local function imageFromFile(path, width, height)
+    if not path then
+        return nil
+    end
+
+    local ok, orig_w, orig_h = pcall(function()
+        local probe = ImageWidget:new { file = path, scale_factor = 1 }
+        probe:_render()
+        local w = probe:getOriginalWidth()
+        local h = probe:getOriginalHeight()
+        probe:free()
+        return w, h
+    end)
+    if not ok or not orig_w or not orig_h or orig_w <= 0 or orig_h <= 0 then
+        return nil
+    end
+
+    local scale_to_fill = math.max(width / orig_w, height / orig_h)
+    return ImageWidget:new {
+        file = path,
+        width = width,
+        height = height,
+        scale_factor = scale_to_fill,
+        center_x_ratio = 0.5,
+        center_y_ratio = 0.5,
+    }
+end
+
 local function firstSeriesCover(item, width, height)
     for _, book_entry in ipairs(seriesItems(item) or {}) do
         local image = imageFromBook(book_entry.path or book_entry.file, width, height)
@@ -202,12 +230,12 @@ local function directoryArtwork(item, width, height)
         local path = item.filepath or entry.path
         local local_cover_path = burrow_util.findCover(path)
         if local_cover_path then
-            local folder_cover = burrow_util.getFolderCover(
-                path,
-                width,
-                height,
-                local_cover_path
-            )
+            -- Keep the unified physical-folder cover's artwork as a direct
+            -- ImageWidget. cover_layout receives an explicit reference to this
+            -- image and can resize it together with the outer rounded frame.
+            -- The old getFolderCover() path inserted another FrameContainer
+            -- between them, which made post-build cover discovery ambiguous.
+            local folder_cover = imageFromFile(local_cover_path, width, height)
             if folder_cover then
                 return folder_cover
             end
@@ -320,13 +348,14 @@ local function roundedDirectoryCover(item, max_w, max_h)
     )
     local artwork = directoryArtwork(item, art_w, art_h)
 
-    return RoundedDirectoryCover:new {
+    local cover = RoundedDirectoryCover:new {
         width = art_w + border_total,
         height = art_h + border_total,
         radius = math.max(Screen:scaleBySize(6), Size.radius.default),
         border_size = border,
         inner = artwork,
     }
+    return cover, artwork
 end
 
 local function cleanTitle(item)
@@ -387,7 +416,7 @@ local function rebuildMosaicPhysicalFolder(item)
         Screen:scaleBySize(40),
         item.height - CAPTION_VERTICAL_RESERVE
     )
-    local cover = roundedDirectoryCover(item, item.width, max_cover_h)
+    local cover, primary_image = roundedDirectoryCover(item, item.width, max_cover_h)
     local cover_size = cover:getSize()
     local cover_dimen = Geom:new { w = cover_size.w, h = cover_size.h }
     local marked_cover = OverlapGroup:new {
@@ -432,6 +461,14 @@ local function rebuildMosaicPhysicalFolder(item)
     item._folder_image_size = nil
     item._foldercover_processed = true
     item._burrow_unified_mosaic_folder = true
+
+    -- Expose the exact visual elements to the final cover-layout pass. Do not
+    -- make it rediscover a folder cover by walking the widget tree: the folder
+    -- marker is also image-like and the rounded cover keeps its artwork in a
+    -- named field rather than a numeric child.
+    item._burrow_primary_cover_frame = cover
+    item._burrow_primary_cover_image = primary_image
+    item._burrow_folder_caption = caption
     item.bookinfo_found = true
     if item.menu then
         item.menu._has_cover_images = true
@@ -541,13 +578,14 @@ local function rebuildListDirectory(item)
             or 1
     )
     local max_cover = math.max(1, row_height - 2 * LIST_PADDING)
+    local list_cover = roundedDirectoryCover(item, max_cover, max_cover)
     local replacement = CenterContainer:new {
         dimen = Geom:new { w = row_height, h = row_height },
         margin = 0,
         padding = LIST_PADDING,
         color = Blitbuffer.COLOR_WHITE,
         dim = item.file_deleted,
-        roundedDirectoryCover(item, max_cover, max_cover),
+        list_cover,
     }
     replaceListArtwork(
         item,

@@ -10,7 +10,7 @@ Burrow brings your local library, online catalogs, series navigation, and useful
 
 [Download Burrow](https://github.com/richbeatty/burrow.koplugin/releases) · [Report a bug](https://github.com/richbeatty/burrow.koplugin/issues/new?template=bug_report.yml) · [Request a feature](https://github.com/richbeatty/burrow.koplugin/issues/new?template=feature_request.yml)
 
-> Burrow is in public beta. Back up your KOReader data folder before installing.
+> Burrow 0.4.0 is the first stable release. Back up your KOReader data folder before installing or upgrading.
 
 ## Screenshots
 
@@ -23,11 +23,13 @@ Burrow brings your local library, online catalogs, series navigation, and useful
 ### Library
 
 - Cover grid and cover list views
-- Automatic series folders
-- Rounded book, folder, and series covers
+- Optional automatic series folders
+- Rounded book, folder, and series covers with consistent sizing
+- Optional book, folder, and series titles under covers
 - Reading percentage and numbered series badges
 - Adjustable cover size, spacing, and grids up to 8 by 8
 - Flexible top bar, hero card, page indicators, and optional labels
+- Return to Library navigation independent of automatic series grouping
 
 ### Store
 
@@ -65,9 +67,9 @@ plugins/burrow.koplugin/main.lua
 
 6. Fully close and restart KOReader.
 
-## Beta Notes
+## Release notes
 
-Burrow is ready for regular use, but beta testing is still expanding across more devices, screen sizes, KOReader releases, and OPDS catalogs.
+Burrow 0.4.0 marks the end of the public beta period and is the first stable release.
 
 - The built-in Cover Browser must remain disabled while Burrow is active.
 - Very large cover settings may leave little space between covers on dense grids.
@@ -89,7 +91,7 @@ See [`NOTICE.md`](NOTICE.md) for licensing and source acknowledgements.
 
 ## Status and contributing
 
-Burrow is currently in public beta. Bug reports, focused fixes, documentation improvements, and additional device testing are welcome.
+Burrow is stable for regular use. Bug reports, focused fixes, documentation improvements, and additional device testing are welcome.
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a pull request. Please remove passwords, tokens, private catalog URLs, personal paths, and book information from screenshots or logs.
 

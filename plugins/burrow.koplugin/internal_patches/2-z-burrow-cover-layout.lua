@@ -46,6 +46,9 @@ local function patchBurrowCoverControls(plugin)
 
     local GAP_SETTING_KEY = "burrow_cover_gap_reduction"
     local SIZE_SETTING_KEY = "burrow_cover_size_percent"
+    local SHOW_BOOK_TITLES_SETTING = "burrow_show_book_titles"
+    local SHOW_FOLDER_TITLES_SETTING = "burrow_show_folder_titles"
+    local SHOW_SERIES_TITLES_SETTING = "burrow_show_series_titles"
 
     local DEFAULT_GAP = 0
     local MIN_GAP = 0
@@ -106,8 +109,36 @@ local function patchBurrowCoverControls(plugin)
         return cache and filepath and cache[filepath] ~= nil or false
     end
 
+    local function isPhysicalFolder(item)
+        return item and item._burrow_unified_mosaic_folder == true
+    end
+
+    local function captionFor(item)
+        if not item then return nil end
+        return item._cover_caption or item._burrow_folder_caption
+    end
+
     local function hasExternalCaption(item)
-        return isBook(item) or isSeriesGroup(item)
+        return captionFor(item) ~= nil
+            or isBook(item)
+            or isSeriesGroup(item)
+            or isPhysicalFolder(item)
+    end
+
+    local function settingEnabled(setting_name)
+        local value = BookInfoManager:getSetting(setting_name)
+        return value ~= "N" and value ~= false
+    end
+
+    local function shouldShowCaption(item)
+        if isSeriesGroup(item) then
+            return settingEnabled(SHOW_SERIES_TITLES_SETTING)
+        elseif isBook(item) then
+            return settingEnabled(SHOW_BOOK_TITLES_SETTING)
+        elseif isPhysicalFolder(item) then
+            return settingEnabled(SHOW_FOLDER_TITLES_SETTING)
+        end
+        return true
     end
 
     local function isImageWidget(widget)
@@ -120,7 +151,7 @@ local function patchBurrowCoverControls(plugin)
     local function getFrameChrome(frame)
         if not frame then return 0, 0 end
         local margin = tonumber(frame.margin) or 0
-        local border = tonumber(frame.bordersize) or 0
+        local border = tonumber(frame.bordersize) or tonumber(frame.border_size) or 0
         local padding = tonumber(frame.padding) or 0
         local padding_left = tonumber(frame.padding_left) or padding
         local padding_right = tonumber(frame.padding_right) or padding
@@ -159,6 +190,18 @@ local function patchBurrowCoverControls(plugin)
     local function findPrimaryCover(item)
         local root = item and item[1]
         if not root then return end
+
+        -- The unified physical-folder renderer exposes the exact cover image and
+        -- outer rounded frame. Prefer those references so the small folder marker
+        -- can never be mistaken for the primary cover image.
+        local explicit_image = item._burrow_primary_cover_image
+        local explicit_frame = item._burrow_primary_cover_frame
+        if explicit_image and explicit_frame and explicit_image.getSize then
+            local ok, size = pcall(explicit_image.getSize, explicit_image)
+            if ok and size and size.w and size.h and size.w > 0 and size.h > 0 then
+                return explicit_image, explicit_frame, root, size.w, size.h
+            end
+        end
 
         local candidates = {}
         walkWidgets(root, nil, {}, candidates)
@@ -222,12 +265,18 @@ local function patchBurrowCoverControls(plugin)
     end
 
     local function resizePrimaryCover(item)
-        if not item or item._burrow_cover_size_applied == getCoverSize() then
+        if not item then return end
+
+        local image, frame, root, image_w, image_h = findPrimaryCover(item)
+        if not image or not frame or not image_w or not image_h then
             return
         end
 
-        local image, frame, root, image_w, image_h = findPrimaryCover(item)
-        if not image or not image_w or not image_h then
+        local requested_size = getCoverSize()
+        if item._burrow_cover_size_applied == requested_size
+            and item._burrow_cover_size_image == image
+            and item._burrow_cover_size_frame == frame
+        then
             return
         end
 
@@ -251,7 +300,7 @@ local function patchBurrowCoverControls(plugin)
         frame._burrow_cover_size_base_width = frame._burrow_cover_size_base_width or frame_w
         frame._burrow_cover_size_base_height = frame._burrow_cover_size_base_height or frame_h
 
-        local factor = getCoverSize() / 100
+        local factor = requested_size / 100
         local base_image_w = image._burrow_cover_size_base_width
         local base_image_h = image._burrow_cover_size_base_height
         local base_frame_h = frame._burrow_cover_size_base_height
@@ -307,7 +356,9 @@ local function patchBurrowCoverControls(plugin)
         item._burrow_cover_vertical_shift = hasExternalCaption(item)
             and math.max(0, round((new_frame_h - base_frame_h) / 2))
             or 0
-        item._burrow_cover_size_applied = getCoverSize()
+        item._burrow_cover_size_applied = requested_size
+        item._burrow_cover_size_image = image
+        item._burrow_cover_size_frame = frame
     end
 
     if not MosaicMenuItem._burrow_cover_size_patched_v2 then
@@ -336,7 +387,7 @@ local function patchBurrowCoverControls(plugin)
 
         function TextWidget:paintTo(bb, x, y)
             local item = active_caption_item
-            if item and item._cover_caption == self then
+            if item and captionFor(item) == self then
                 item._burrow_cover_caption_deferred = true
                 return
             end
@@ -374,21 +425,21 @@ local function patchBurrowCoverControls(plugin)
                 error(result)
             end
 
-            if self._burrow_cover_caption_deferred and self._cover_caption then
-                local caption = self._cover_caption
+            local caption = captionFor(self)
+            if self._burrow_cover_caption_deferred and caption then
                 local caption_size = caption:getSize()
                 local caption_x = x + math.floor(((tonumber(self.width) or caption_size.w) - caption_size.w) / 2)
 
-                local frame = self._burrow_primary_cover_frame
-                local cover_bottom
-                if frame and frame.dimen and frame.dimen.y and frame.dimen.h then
-                    cover_bottom = frame.dimen.y + frame.dimen.h
-                else
-                    local current_h = tonumber(self._burrow_cover_current_height) or 0
-                    cover_bottom = y - vertical_shift
-                        + math.floor(((tonumber(self.height) or current_h) - current_h) / 2)
-                        + current_h
-                end
+                -- Every Burrow Cover Grid cover is centered in the tile before
+                -- the final vertical shift is applied. Derive the bottom edge from
+                -- that invariant instead of reading frame.dimen.y. Custom physical
+                -- folder covers own their paint method and do not reliably receive
+                -- an absolute y in frame.dimen, which previously allowed captions
+                -- to be placed through the cover.
+                local current_h = tonumber(self._burrow_cover_current_height) or 0
+                local cover_bottom = y - vertical_shift
+                    + math.floor(((tonumber(self.height) or current_h) - current_h) / 2)
+                    + current_h
 
                 local caption_y = cover_bottom + CAPTION_GAP
                 local lowest_y = original_y + (tonumber(self.height) or caption_size.h) - caption_size.h
@@ -396,7 +447,9 @@ local function patchBurrowCoverControls(plugin)
                     caption_y = lowest_y
                 end
 
-                original_text_paint(caption, bb, caption_x, caption_y)
+                if shouldShowCaption(self) then
+                    original_text_paint(caption, bb, caption_x, caption_y)
+                end
             end
 
             return result

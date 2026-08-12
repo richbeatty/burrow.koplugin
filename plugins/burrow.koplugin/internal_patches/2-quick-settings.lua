@@ -814,13 +814,8 @@ local function buildSettingsMenu()
     }
 end
 
-local function addOrderItemOnce(order, id)
-    for _, existing in ipairs(order) do
-        if existing == id then return end
-    end
-    table.insert(order, "----------------------------")
-    table.insert(order, id)
-end
+-- Expose the configuration menu to Burrow's consolidated Settings screen.
+Module.getSettingsMenu = buildSettingsMenu
 
 local function addTabOnce(tab_table)
     for _, tab in ipairs(tab_table or {}) do
@@ -830,22 +825,16 @@ local function addTabOnce(tab_table)
 end
 
 local FileManagerMenu = require("apps/filemanager/filemanagermenu")
-local FileManagerMenuOrder = require("ui/elements/filemanager_menu_order")
 local ReaderMenu = require("apps/reader/modules/readermenu")
-local ReaderMenuOrder = require("ui/elements/reader_menu_order")
 
 local original_fm_setUpdateItemTable = FileManagerMenu.setUpdateItemTable
 function FileManagerMenu:setUpdateItemTable()
-    addOrderItemOnce(FileManagerMenuOrder.setting, "rounded_quick_settings_config")
-    self.menu_items.rounded_quick_settings_config = buildSettingsMenu()
     original_fm_setUpdateItemTable(self)
     if self.tab_item_table then addTabOnce(self.tab_item_table) end
 end
 
 local original_reader_setUpdateItemTable = ReaderMenu.setUpdateItemTable
 function ReaderMenu:setUpdateItemTable()
-    addOrderItemOnce(ReaderMenuOrder.setting, "rounded_quick_settings_config")
-    self.menu_items.rounded_quick_settings_config = buildSettingsMenu()
     original_reader_setUpdateItemTable(self)
     if self.tab_item_table then addTabOnce(self.tab_item_table) end
 end

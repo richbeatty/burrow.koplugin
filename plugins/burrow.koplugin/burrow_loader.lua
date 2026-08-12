@@ -355,7 +355,9 @@ end
 function Loader:getUserNotices()
     local notices = {}
     local labels = {
-        library_visuals = "Library appearance",
+        library_visuals = "Library styling",
+        library_navigation = "Library navigation",
+        settings_menu = "Burrow Settings",
         home_store = "Home and Store footer",
         quick_settings = "Quick Settings",
         statusbar = "Status bar",

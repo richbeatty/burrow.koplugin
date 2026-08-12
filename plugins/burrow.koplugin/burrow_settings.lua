@@ -5,8 +5,8 @@ local BurrowSettings = {}
 BurrowSettings.features = {
     {
         id = "library_visuals",
-        text = _("Burrow library appearance"),
-        help_text = _("Rounded covers, folder styling, captions, badges, hero card, automatic series folders, and the expanded cover grid."),
+        text = _("Burrow library styling"),
+        help_text = _("Rounded covers, folder styling, captions, badges, the top bar, hero card, and the expanded cover grid."),
         default = true,
     },
     {
@@ -86,6 +86,14 @@ function BurrowSettings:getModuleManifest()
         critical = true,
     })
 
+    local function automaticSeries()
+        add("automatic_series", "2-automatic-book-series.lua", "instance", {
+            filename = "2-automatic-book-series.lua",
+            feature = "library_navigation",
+            depends = { "library_core" },
+        })
+    end
+
     if self:isFeatureEnabled("library_visuals") then
         local function visual(id, filename, depends)
             add(id, filename, "instance", {
@@ -94,10 +102,18 @@ function BurrowSettings:getModuleManifest()
                 depends = depends or { "library_core" },
             })
         end
+
         visual("disable_widgets", "2--disable-burrow-widgets.lua")
+
+        -- IMPORTANT LOAD ORDER:
+        -- rounded_covers must wrap Burrow's original MosaicMenuItem:update before
+        -- automatic_series wraps it. rounded_covers retrieves the ImageWidget
+        -- upvalue from that original closure to establish the shared 2:3 cover
+        -- geometry and caption reserve.
         visual("rounded_covers", "2--stretched-rounded-covers.lua")
+        automaticSeries()
+
         visual("simple_topbar", "2-a-burrow-simple-topbar.lua")
-        visual("automatic_series", "2-automatic-book-series.lua")
         visual("percent_badge", "2-percent-badge.lua", { "library_core", "rounded_covers" })
         visual("grid_8x8", "2-burrow-grid-8x8.lua")
         visual("hero_card", "2-burrow-hero-card.lua", { "library_core", "simple_topbar" })
@@ -107,9 +123,29 @@ function BurrowSettings:getModuleManifest()
         visual("series_badge", "2-series-badge-numbered.lua", {
             "library_core", "rounded_covers", "automatic_series",
         })
-        visual("cover_layout", "2-z-burrow-cover-layout.lua", {
-            "library_core", "rounded_covers",
+
+        -- The physical-folder consistency layer used to be applied from main.lua
+        -- after every instance module. That meant it rebuilt physical folders
+        -- after cover_layout had already resized them. Pre-apply it here instead;
+        -- main.lua's later call becomes a harmless no-op because Module.applied is
+        -- already true.
+        add("folder_consistency", "burrow_list_folder_covers", "instance", {
+            module_name = "burrow_list_folder_covers",
+            feature = "library_visuals",
+            depends = { "library_core", "rounded_covers", "automatic_series" },
         })
+
+        -- This is deliberately the last cover-rendering wrapper. It receives the
+        -- finished book, series, or physical-folder widget and applies one shared
+        -- size, spacing, and caption-placement policy.
+        visual("cover_layout", "2-z-burrow-cover-layout.lua", {
+            "library_core", "rounded_covers", "folder_consistency",
+        })
+    else
+        -- Series grouping and Return to Library remain available without Burrow's
+        -- visual styling, but when styling is enabled they must load after the
+        -- rounded-cover geometry hook above.
+        automaticSeries()
     end
     if self:isFeatureEnabled("home_store") then
         add("home_store_footer", "2-home-store-footer.lua", "instance", {
@@ -142,6 +178,14 @@ function BurrowSettings:getModuleManifest()
             feature = "reader_bottom_menu",
         })
     end
+
+    -- Apply last so it can collect settings inserted by the other Burrow
+    -- modules and present one consistent Burrow Settings hierarchy.
+    add("settings_menu_cleanup", "2-zz-burrow-settings-menu.lua", "instance", {
+        filename = "2-zz-burrow-settings-menu.lua",
+        feature = "settings_menu",
+        depends = { "library_core" },
+    })
 
     return modules
 end
@@ -203,6 +247,9 @@ function BurrowSettings:applyFirstRunDefaults(BookInfoManager)
     saveIfMissing(BookInfoManager, "use_custom_sorts", true)
     saveIfMissing(BookInfoManager, "burrow_cover_gap_reduction", 0)
     saveIfMissing(BookInfoManager, "burrow_cover_size_percent", 100)
+    saveIfMissing(BookInfoManager, "burrow_show_book_titles", "Y")
+    saveIfMissing(BookInfoManager, "burrow_show_folder_titles", "Y")
+    saveIfMissing(BookInfoManager, "burrow_show_series_titles", "Y")
 
     saveIfMissing(BookInfoManager, "burrow_topbar_show_home", true)
     saveIfMissing(BookInfoManager, "burrow_topbar_show_favorites", false)

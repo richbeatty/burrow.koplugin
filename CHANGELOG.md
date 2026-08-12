@@ -4,6 +4,31 @@ All notable changes to Burrow will be documented here.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-12
+
+### Added
+
+- Added a cleaned-up Burrow Settings structure organized around Library, Navigation, Quick Settings, Store, Advanced, and About
+- Added independent controls for book, physical-folder, and series titles under covers
+- Added a Return to Library display option independent of automatic series grouping
+
+### Changed
+
+- Promoted Burrow out of beta as the first stable release
+- Moved automatic series grouping out of KOReader's stock File Browser settings and into Burrow Settings
+- Consolidated Quick Settings configuration under Burrow Settings
+- Unified book, physical-folder, and virtual-series cover geometry so all three use the same sizing policy
+- Kept cover size and spacing controls available from the cleaned-up Library settings
+- Reordered the cover rendering modules so rounded book geometry is established before automatic series processing and final scaling
+
+### Fixed
+
+- Kept Return to Library available for manually organized folders when automatic series grouping is disabled
+- Prevented titles from intersecting enlarged covers
+- Prevented physical-folder rendering from discarding the configured cover size
+- Corrected rebuilt cover tiles so the configured size is reapplied after reader returns and browser refreshes
+- Replaced heuristic physical-folder cover discovery with explicit cover references in the final layout pass
+
 ## [0.3.8-beta] - 2026-08-06
 
 ### Changed
@@ -169,7 +194,8 @@ All notable changes to Burrow will be documented here.
 
 - Initial unified Burrow library, Store, and reader-interface package
 
-[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.3.8-beta...HEAD
+[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.4.0
 [0.3.8-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.8-beta
 [0.3.7-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.7-beta
 [0.3.6-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.6-beta
