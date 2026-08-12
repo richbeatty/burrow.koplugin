@@ -1,0 +1,54 @@
+name: Apply approved Burrow 0.4.0 source
+
+on:
+  push:
+    branches:
+      - agent/release-0.4.0
+    paths:
+      - '.github/workflows/apply-0.4.0-v7.yml'
+      - 'scripts/release-v7-remaining.patch.gz.b64'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/release-0.4.0
+          fetch-depth: 0
+
+      - name: Apply approved v7 source patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d scripts/release-v7-remaining.patch.gz.b64 | gzip -d > /tmp/burrow-v7.patch
+          git apply --check /tmp/burrow-v7.patch
+          git apply /tmp/burrow-v7.patch
+
+      - name: Verify expected source hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object plugins/burrow.koplugin/burrow_list_folder_covers.lua)" = "7b5566880d5313504cdf7dba1873366eedfcd001"
+          test "$(git hash-object plugins/burrow.koplugin/internal_patches/2-automatic-book-series.lua)" = "c3ea907ab8049b5c2a68df3dc6ee2e198abdd05d"
+          test "$(git hash-object plugins/burrow.koplugin/internal_patches/2-quick-settings.lua)" = "b7aa2570142936770700ed292f4883aedbcf20fb"
+          test "$(git hash-object plugins/burrow.koplugin/internal_patches/2-z-burrow-cover-layout.lua)" = "092207ee737bca91061df06d383c3c4fb68a27db"
+          test "$(git hash-object plugins/burrow.koplugin/internal_patches/2-zz-burrow-settings-menu.lua)" = "13ce30dc1cb46e8b8d3508234acba9e5b94d49d9"
+          test "$(git hash-object plugins/burrow.koplugin/burrow_loader.lua)" = "fc2629a559070b560d745fae7c08d92d3fc3f652"
+          test "$(git hash-object plugins/burrow.koplugin/burrow_settings.lua)" = "979f802f5cf42d220dfe05b655a3b46eeeb0752d"
+
+      - name: Remove one-time release helper and commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f scripts/release-v7-remaining.patch.gz.b64
+          rm -f .github/workflows/apply-0.4.0-v7.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Apply approved Burrow 0.4.0 source"
+          git push origin HEAD:agent/release-0.4.0
