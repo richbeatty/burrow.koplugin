@@ -6,7 +6,7 @@ on:
       - agent/release-0.4.0
     paths:
       - '.github/workflows/apply-0.4.0-v7.yml'
-      - 'scripts/release-v7-remaining.patch.gz.b64'
+      - 'scripts/release-v7-part-*.b64'
 
 permissions:
   contents: write
@@ -21,11 +21,14 @@ jobs:
           ref: agent/release-0.4.0
           fetch-depth: 0
 
-      - name: Apply approved v7 source patch
+      - name: Reconstruct and verify approved v7 patch
         shell: bash
         run: |
           set -euo pipefail
-          base64 -d scripts/release-v7-remaining.patch.gz.b64 | gzip -d > /tmp/burrow-v7.patch
+          cat scripts/release-v7-part-*.b64 | tr -d '\r\n' | base64 -d > /tmp/burrow-v7.patch.gz
+          echo '1ea7a09fa5d1c90513993b83c17dc1f6e72c8db185cb6f71bd848b9c59dd09d1  /tmp/burrow-v7.patch.gz' | sha256sum -c -
+          gzip -dc /tmp/burrow-v7.patch.gz > /tmp/burrow-v7.patch
+          echo 'cc41788de935bbd271ae09a7509dd27c931f00bc4b0fe24fa38bd67edadd4769  /tmp/burrow-v7.patch' | sha256sum -c -
           git apply --check /tmp/burrow-v7.patch
           git apply /tmp/burrow-v7.patch
 
@@ -41,11 +44,12 @@ jobs:
           test "$(git hash-object plugins/burrow.koplugin/burrow_loader.lua)" = "fc2629a559070b560d745fae7c08d92d3fc3f652"
           test "$(git hash-object plugins/burrow.koplugin/burrow_settings.lua)" = "979f802f5cf42d220dfe05b655a3b46eeeb0752d"
 
-      - name: Remove one-time release helper and commit
+      - name: Remove one-time release helpers and commit
         shell: bash
         run: |
           set -euo pipefail
           rm -f scripts/release-v7-remaining.patch.gz.b64
+          rm -f scripts/release-v7-part-*.b64
           rm -f .github/workflows/apply-0.4.0-v7.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
