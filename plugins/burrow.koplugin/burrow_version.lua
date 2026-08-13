@@ -1,6 +1,6 @@
 return {
-    VERSION = "0.4.2-beta.9",
-    DISPLAY_VERSION = "0.4.2-beta.9",
+    VERSION = "0.4.2-beta.10",
+    DISPLAY_VERSION = "0.4.2-beta.10",
     STORE_ENGINE_VERSION = "1.2.1",
 
     -- Burrow is tested against KOReader 2026.07.2. Older releases are blocked,

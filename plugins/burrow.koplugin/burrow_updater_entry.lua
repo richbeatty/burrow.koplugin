@@ -8,6 +8,16 @@ if rotation_ok and RotationFix and type(RotationFix.apply) == "function" then
     pcall(RotationFix.apply)
 end
 
+-- Apply Burrow's Home-style page dots to KOReader's paginated Menu and
+-- KeyValuePage widgets. This remains a separate guarded module so the tested
+-- pager implementation can be updated without replacing KOReader's widgets.
+local source = debug.getinfo(1, "S").source
+local plugin_root = source:match("^@(.+)/[^/]+$") or "."
+local pager_ok, Pager = pcall(dofile, plugin_root .. "/internal_patches/2-dialog-pager-icons.lua")
+if pager_ok and Pager and type(Pager.apply) == "function" then
+    pcall(Pager.apply)
+end
+
 local function cleanError(err)
     return tostring(err or "unknown error"):gsub("^.-:%d+:%s*", "")
 end
