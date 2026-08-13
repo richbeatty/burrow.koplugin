@@ -29,6 +29,7 @@ jobs:
           test -f plugins/burrow.koplugin/_meta.lua
           test -f plugins/burrow.koplugin/burrow_loader.lua
           test -f plugins/burrow.koplugin/burrow_library.lua
+          test -f plugins/burrow.koplugin/burrow_updater.lua
           test -f plugins/burrow.koplugin/burrow_version.lua
           test -f LICENSE
           test -f NOTICE.md
