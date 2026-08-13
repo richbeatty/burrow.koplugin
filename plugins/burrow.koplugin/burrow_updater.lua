@@ -324,7 +324,7 @@ local function expectedArchiveDigest(release)
     end
     local content, err = httpGet(checksum_asset.browser_download_url, "application/octet-stream")
     if not content then return nil, err end
-    local value = content:match("(%x+)")
+    local value = content:match("^%s*(%x+)")
     if not value or #value ~= 64 then
         return nil, "the release checksum is invalid"
     end
@@ -424,7 +424,8 @@ local function collectFiles(root, relative, output)
             local child_path = root .. "/" .. child_relative
             local mode = pathMode(child_path)
             if mode == "directory" then
-                collectFiles(root, child_relative, output)
+                local nested, nested_err = collectFiles(root, child_relative, output)
+                if not nested then return nil, nested_err end
             elseif mode == "file" then
                 output[#output + 1] = child_relative
             else
@@ -455,15 +456,22 @@ local function verifyManifest()
     if not files then return nil, collect_err end
     if #files == 0 then return nil, "the extracted plugin is empty" end
 
+    local present = {}
     for _, relative in ipairs(files) do
         local wanted = expected[relative]
         if not wanted then
             return nil, "FILES.sha256 does not list " .. relative
         end
+        present[relative] = true
         local content, read_err = readFile(STAGING_PLUGIN_DIR .. "/" .. relative)
         if not content then return nil, read_err end
         if sha256(content):lower() ~= wanted then
             return nil, "checksum verification failed for " .. relative
+        end
+    end
+    for relative in pairs(expected) do
+        if not present[relative] then
+            return nil, "the update archive is missing " .. relative
         end
     end
     return true
@@ -607,7 +615,10 @@ function BurrowUpdater:_swapInPreparedRelease(release)
         if not ok then error("could not remove the previous backup: " .. tostring(err)) end
     end
 
-    writeState("installing", previous_version, release.version)
+    local state_ok, state_err = writeState("installing", previous_version, release.version)
+    if not state_ok then
+        error("could not create update recovery state: " .. tostring(state_err))
+    end
 
     ok, err = os.rename(PLUGIN_DIR, BACKUP_DIR)
     if not ok then
@@ -629,7 +640,7 @@ function BurrowUpdater:_swapInPreparedRelease(release)
         error("the new version could not be installed, so the previous version was restored: " .. tostring(err))
     end
 
-    local state_ok, state_err = writeState("awaiting_restart", previous_version, release.version)
+    state_ok, state_err = writeState("awaiting_restart", previous_version, release.version)
     if not state_ok then
         logger.warn("[Burrow updater] Could not write restart state:", state_err)
     end
@@ -710,10 +721,14 @@ function BurrowUpdater:_checkForUpdates(interactive)
     end
 
     Device:setIgnoreInput(true)
-    local release, err = fetchRelease(getChannel())
+    local call_ok, release, err = pcall(fetchRelease, getChannel())
     Device:setIgnoreInput(false)
     self._busy = false
 
+    if not call_ok then
+        err = release
+        release = nil
+    end
     if not release then
         if interactive then
             showError(_("Could not check GitHub for updates.") .. "\n\n" .. tostring(err or ""))
