@@ -1,0 +1,40 @@
+name: Validate Burrow updater regression
+
+on:
+  push:
+    branches:
+      - agent/self-updater
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  updater-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Lua 5.1
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.1
+
+      - name: Test updater path normalization
+        run: lua5.1 scripts/test_updater_paths.lua
+
+      - name: Build representative release archive
+        run: bash scripts/package.sh
+
+      - name: Verify directory-entry regression case
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$(find dist -maxdepth 1 -name 'Burrow-*.zip' -print -quit)"
+          test -n "$archive"
+          unzip -Z1 "$archive" | grep -Fx 'plugins/'
+          unzip -Z1 "$archive" | grep -Fx 'plugins/burrow.koplugin/'
+          unzip -Z1 "$archive" | grep -Fx 'plugins/burrow.koplugin/burrow_updater_prepare_fix.lua'
+          unzip -Z1 "$archive" | grep -Fx 'plugins/burrow.koplugin/burrow_update_paths.lua'
