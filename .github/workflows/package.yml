@@ -40,6 +40,11 @@ jobs:
           test -n "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          if [[ "$version" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Build release archive
         shell: bash
@@ -55,6 +60,7 @@ jobs:
           test -n "$checksum"
           unzip -t "$archive"
           test "$(unzip -Z1 "$archive" | grep -c '^plugins/burrow.koplugin/main.lua$')" -eq 1
+          test "$(unzip -Z1 "$archive" | grep -c '^plugins/burrow.koplugin/burrow_updater.lua$')" -eq 1
           test "$(unzip -Z1 "$archive" | grep -c '^FILES.sha256$')" -eq 1
           (cd dist && sha256sum -c "$(basename "$checksum")")
 
@@ -72,6 +78,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_PRERELEASE: ${{ steps.release.outputs.prerelease }}
         shell: bash
         run: |
           set -euo pipefail
@@ -79,21 +86,35 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # During active pre-1.0 development, keep the version tag aligned
-          # with the source used to build the downloadable package.
+          # Keep the version tag aligned with the exact source used to build
+          # the downloadable package. Prerelease versions never become Latest.
           git tag -fa "$RELEASE_TAG" "$GITHUB_SHA" -m "Burrow $RELEASE_VERSION"
           git push origin "refs/tags/$RELEASE_TAG" --force
 
-          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" \
-              --title "Burrow $RELEASE_VERSION" \
-              --generate-notes \
-              --latest
+          if [[ "$RELEASE_PRERELEASE" == "true" ]]; then
+            if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+              gh release create "$RELEASE_TAG" \
+                --title "Burrow $RELEASE_VERSION" \
+                --generate-notes \
+                --prerelease
+            else
+              gh release edit "$RELEASE_TAG" \
+                --title "Burrow $RELEASE_VERSION" \
+                --prerelease \
+                --latest=false
+            fi
           else
-            gh release edit "$RELEASE_TAG" \
-              --title "Burrow $RELEASE_VERSION" \
-              --latest \
-              --prerelease=false
+            if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+              gh release create "$RELEASE_TAG" \
+                --title "Burrow $RELEASE_VERSION" \
+                --generate-notes \
+                --latest
+            else
+              gh release edit "$RELEASE_TAG" \
+                --title "Burrow $RELEASE_VERSION" \
+                --latest \
+                --prerelease=false
+            fi
           fi
 
           gh release upload "$RELEASE_TAG" \
