@@ -18,6 +18,23 @@ if pager_ok and Pager and type(Pager.apply) == "function" then
     pcall(Pager.apply)
 end
 
+-- Quick Settings is attached later by Burrow's loader. Once startup finishes,
+-- layer the swipe guard over that finished TouchMenu wrapper. This preserves
+-- slider dragging but prevents a swipe from being interpreted as a button tap.
+local UIManager = require("ui/uimanager")
+UIManager:nextTick(function()
+    local QuickSettings = package.loaded["burrow.internal.2_quick_settings"]
+    if not (QuickSettings and QuickSettings.applied) then return end
+
+    local guard_ok, Guard = pcall(
+        dofile,
+        plugin_root .. "/internal_patches/2-quick-settings-swipe-guard.lua"
+    )
+    if guard_ok and Guard and type(Guard.apply) == "function" then
+        pcall(Guard.apply)
+    end
+end)
+
 local function cleanError(err)
     return tostring(err or "unknown error"):gsub("^.-:%d+:%s*", "")
 end
