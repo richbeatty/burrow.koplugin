@@ -4,6 +4,77 @@ All notable changes to Burrow will be documented here.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-08-13
+
+### Added
+
+- Added a GitHub-backed self-updater with Check for Updates in Burrow settings
+- Added automatic update checks with stable and beta update-channel support
+- Added update safety handling with backup/restore support for recovering the previous Burrow installation
+
+### Changed
+
+- Replaced the Quick Settings Restart glyph with a power-style icon so Restart is visually distinct from Rotate
+- Replaced older arrow-based paged-dialog footers with Burrow's Home-style page indicator using a long active pill and small inactive dots
+- Centered the Table of Contents page indicator to match the Home library pager
+
+### Fixed
+
+- Restored four-way Quick Settings rotation so Rotate cycles through all four physical screen orientations
+- Restored remembered orientation between the library and reader and across full KOReader restarts
+- Restored one-row and one-column grid configurations such as 2x1 and 1x3 while retaining the 8x8 maximum
+- Improved automatic update scheduling, including due checks when automatic checks are enabled, retry behavior after failed checks, and checks after connectivity becomes available
+- Prevented Quick Settings swipes from activating action tiles when a swipe ends over a button
+- Kept frontlight and warmth slider dragging functional while consuming other Quick Settings swipes
+- Scoped the Home-style Menu pager replacement to Table of Contents instead of modifying every KOReader Menu
+- Restored the Home and Store footer while browsing Store after the beta.10 pager regression
+- Prevented the pager customization from interfering with unrelated KOReader menus
+- Updated Book Information and Table of Contents pagination to use the Home-style swipe-and-dots interface
+
+## [0.4.2-beta.11] - 2026-08-13
+
+### Fixed
+
+- Prevented Quick Settings swipes from activating action tiles when a swipe ends over a button
+- Kept frontlight and warmth slider dragging functional while consuming other Quick Settings swipes
+- Scoped the Home-style Menu pager replacement to Table of Contents instead of modifying every KOReader Menu
+- Restored the Home and Store footer while browsing Store after the beta.10 pager regression
+- Prevented the beta.10 pager customization from interfering with unrelated KOReader menus
+
+## [0.4.2-beta.10] - 2026-08-13
+
+### Changed
+
+- Replaced the Quick Settings Restart glyph with a power-style icon so Restart is visually distinct from Rotate
+- Replaced the older arrow-based paged-dialog footers with Burrow's Home-style page indicator: a long active pill with small inactive dots
+- Centered the Table of Contents page indicator at the bottom of the screen to match the Home library pager
+
+### Fixed
+
+- Restored four-way Quick Settings rotation so Rotate cycles through all four physical screen orientations
+- Restored rotation persistence between the library and reader
+- Persisted the selected orientation across a full KOReader restart by saving and explicitly restoring the File Manager rotation while rotation locking is enabled
+- Restored grid minimums down to one row or one column, allowing layouts such as 2x1, 1x3, and other rectangular combinations while retaining the 8x8 maximum
+- Improved automatic update checks so enabling Automatic update checks can immediately run a due check
+- Improved automatic update checks when KOReader starts offline by checking again after network connectivity becomes available
+- Kept automatic update checks on their recurring schedule while KOReader remains open
+- Added retry scheduling after failed automatic checks without allowing checks to run more frequently than hourly
+- Updated Book Information pagination to use the Home-style swipe-and-dots interface
+- Updated Table of Contents pagination to use the Home-style swipe-and-dots interface
+
+## [0.4.2-beta.9] - 2026-08-13
+
+### Changed
+
+- Promoted the updater, rotation, and grid recovery work to the prerelease channel for device testing
+
+### Fixed
+
+- Restored four-way Quick Settings rotation
+- Restored remembered rotation between File Manager and Reader
+- Restored one-row and one-column grid configurations
+- Improved automatic update-check triggering for the beta update channel
+
 ## [0.4.1] - 2026-08-12
 
 ### Changed
@@ -205,7 +276,12 @@ All notable changes to Burrow will be documented here.
 
 - Initial unified Burrow library, Store, and reader-interface package
 
-[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.4.2
+[0.4.2-beta.11]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.4.2-beta.11
+[0.4.2-beta.10]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.4.2-beta.10
+[0.4.2-beta.9]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.4.2-beta.9
+[0.4.1]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.4.1
 [0.4.0]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.4.0
 [0.3.8-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.8-beta
 [0.3.7-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.7-beta

@@ -14,6 +14,16 @@ local BurrowCompatibility = require("burrow_compatibility")
 local BurrowLoader = require("burrow_loader")
 local BurrowSettings = require("burrow_settings")
 
+-- The updater is optional at runtime. A problem in update support must never
+-- stop the core Burrow library from loading.
+local updater_ok, BurrowUpdater = pcall(require, "burrow_updater_entry")
+if not updater_ok then
+    logger.warn(burrow_debug.logprefix, "Burrow updater could not be loaded", BurrowUpdater)
+elseif BurrowUpdater._burrow_dynamic_prepare_dispatch ~= true then
+    updater_ok = false
+    logger.warn(burrow_debug.logprefix, "Burrow updater dispatch guard was not installed")
+end
+
 -- Keep Burrow visible in Plugin Management when a critical prerequisite fails.
 local function makeUnavailablePlugin(reason)
     local BurrowUnavailable = WidgetContainer:extend {
@@ -36,21 +46,35 @@ local function makeUnavailablePlugin(reason)
     end
 
     function BurrowUnavailable:addToMainMenu(menu_items)
+        local sub_items = {
+            {
+                text = _("Burrow could not start"),
+                keep_menu_open = true,
+                callback = function()
+                    UIManager:show(InfoMessage:new {
+                        text = self.unavailable_reason,
+                        show_icon = false,
+                        alignment = "center",
+                    })
+                end,
+            },
+        }
+
+        if updater_ok then
+            local recovery_ok, recovery_items = pcall(
+                BurrowUpdater.recoveryMenuItems,
+                BurrowUpdater
+            )
+            if recovery_ok and type(recovery_items) == "table" then
+                for _, item in ipairs(recovery_items) do
+                    sub_items[#sub_items + 1] = item
+                end
+            end
+        end
+
         menu_items.burrow = {
             text = _("Burrow"),
-            sub_item_table = {
-                {
-                    text = _("Burrow could not start"),
-                    keep_menu_open = true,
-                    callback = function()
-                        UIManager:show(InfoMessage:new {
-                            text = self.unavailable_reason,
-                            show_icon = false,
-                            alignment = "center",
-                        })
-                    end,
-                },
-            },
+            sub_item_table = sub_items,
             separator = true,
         }
     end
@@ -153,6 +177,17 @@ end
 Burrow._loader_errors = BurrowLoader:getErrors()
 Burrow._loader_statuses = BurrowLoader:getStatuses()
 Burrow._degraded_features = BurrowLoader:getDegradedFeatures()
+
+if updater_ok then
+    local startup_ok, startup_error = pcall(
+        BurrowUpdater.startup,
+        BurrowUpdater,
+        Burrow
+    )
+    if not startup_ok then
+        logger.warn(burrow_debug.logprefix, "Burrow updater startup failed", startup_error)
+    end
+end
 
 logger.info(
     burrow_debug.logprefix,

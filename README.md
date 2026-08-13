@@ -67,6 +67,17 @@ plugins/burrow.koplugin/main.lua
 
 6. Fully close and restart KOReader.
 
+## Updates
+
+Burrow can check GitHub Releases directly from **Burrow Settings > About Burrow > Check for Updates**.
+
+- Stable releases use the Stable update channel.
+- Prerelease builds default to the Beta update channel so testers can receive the next prerelease without exposing it to stable users.
+- Automatic update checks are off by default. When enabled, Burrow checks at most once per day while KOReader is already online and always asks before installing an update.
+- Downloads are SHA-256 verified, unpacked into a staging directory, checked against the package file manifest, and syntax-checked before the installed plugin is replaced.
+- The updater keeps one previous Burrow version outside the live plugin folder so it can be restored from About Burrow if needed.
+- Temporary downloads and staging files are removed after installation and again at the next successful Burrow startup.
+
 ## Release notes
 
 Burrow 0.4.0 marks the end of the public beta period and is the first stable release.
