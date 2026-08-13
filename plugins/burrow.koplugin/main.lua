@@ -16,7 +16,7 @@ local BurrowSettings = require("burrow_settings")
 
 -- The updater is optional at runtime. A problem in update support must never
 -- stop the core Burrow library from loading.
-local updater_ok, BurrowUpdater = pcall(require, "burrow_updater")
+local updater_ok, BurrowUpdater = pcall(require, "burrow_updater_fix")
 if not updater_ok then
     logger.warn(burrow_debug.logprefix, "Burrow updater could not be loaded", BurrowUpdater)
 end
