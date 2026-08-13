@@ -45,7 +45,7 @@ assert(entry:find('require%("burrow_updater_prepare_fix"%)'), "entrypoint must l
 assert(entry:find("pcall%(self%._prepareRelease, self, release%)"), "entrypoint must resolve _prepareRelease at call time")
 assert(not entry:find("originalPrepare", 1, true), "entrypoint must not cache an older preparation function")
 assert(entry:find("_burrow_dynamic_prepare_dispatch", 1, true), "entrypoint must expose the dispatch guard")
-assert(main:find('require%("burrow_updater_entry"%)'), "main.lua must load the final updater entrypoint")
+assert(main:find('pcall%(require,%s*"burrow_updater_entry"%)'), "main.lua must load the final updater entrypoint")
 assert(main:find("_burrow_dynamic_prepare_dispatch", 1, true), "main.lua must verify the dispatch guard")
 
 print("Burrow updater path and dispatch regression tests passed")
