@@ -1,4 +1,12 @@
 local Updater = require("burrow_updater_prepare_fix")
+Updater = require("burrow_updater_auto").apply(Updater)
+
+-- Restore Burrow's original four-way, persistent Quick Settings rotation
+-- behavior without changing KOReader's native SwapRotation action globally.
+local rotation_ok, RotationFix = pcall(require, "burrow_quick_settings_rotation")
+if rotation_ok and RotationFix and type(RotationFix.apply) == "function" then
+    pcall(RotationFix.apply)
+end
 
 local function cleanError(err)
     return tostring(err or "unknown error"):gsub("^.-:%d+:%s*", "")

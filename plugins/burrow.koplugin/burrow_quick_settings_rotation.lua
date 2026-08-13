@@ -26,13 +26,20 @@ function RotationFix.apply()
             and calledFromBurrowQuickSettings()
 
         if burrow_rotate then
+            -- Burrow's Rotate button should cycle through every physical side,
+            -- not only swap between the paired portrait/landscape orientations.
             event = Event:new("IterateRotation")
+            -- Keep the selected orientation when moving between File Manager and
+            -- Reader, instead of letting per-view defaults rotate it again.
             G_reader_settings:makeTrue("lock_rotation")
         end
 
         local result = original_broadcast(self, event, ...)
 
         if burrow_rotate then
+            -- File Manager reads this setting on launch. Saving the post-rotation
+            -- mode makes the last side chosen from Quick Settings survive a full
+            -- KOReader restart as well as reader/file-browser transitions.
             G_reader_settings:saveSetting("fm_rotation_mode", Screen:getRotationMode())
             logger.dbg("[Burrow] Saved Quick Settings rotation", Screen:getRotationMode())
         end
