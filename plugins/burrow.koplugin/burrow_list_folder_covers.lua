@@ -332,7 +332,10 @@ function RoundedDirectoryCover:paintTo(bb, x, y)
             self.width,
             self.height,
             border,
-            Blitbuffer.COLOR_GRAY_3,
+            -- Match the page background in light mode; KOReader night mode
+            -- inverts this white to black, so the reserved border remains
+            -- geometrically present without becoming a visible outline.
+            Blitbuffer.COLOR_WHITE,
             radius,
             true
         )

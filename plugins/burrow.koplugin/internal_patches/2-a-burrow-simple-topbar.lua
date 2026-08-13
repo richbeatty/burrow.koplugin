@@ -135,14 +135,23 @@ local function patchBurrowTopBar(plugin)
                 align = "center",
             }
 
-            local function makeButton(self, icon, tap_callback, hold_callback, size, center)
+            local function makeButton(self, icon, tap_callback, hold_callback, size, center, visual_size)
+                -- visual_size may be smaller than the toolbar slot. Extra
+                -- space is converted to symmetric padding so the touch target,
+                -- slot width, and neighboring icon positions stay unchanged.
+                local draw_size = visual_size or size
+                local extra = math.max(0, size - draw_size)
+                local extra_before = math.floor(extra / 2)
+                local extra_after = extra - extra_before
                 return IconButton:new {
                     icon = icon,
-                    width = size,
-                    height = size,
+                    width = draw_size,
+                    height = draw_size,
                     padding = 0,
-                    padding_top = center and 0 or self.icon_padding_top,
-                    padding_bottom = center and 0 or self.icon_padding_bottom,
+                    padding_left = extra_before,
+                    padding_right = extra_after,
+                    padding_top = (center and 0 or self.icon_padding_top) + extra_before,
+                    padding_bottom = (center and 0 or self.icon_padding_bottom) + extra_after,
                     overlap_align = center and "center" or nil,
                     callback = tap_callback,
                     hold_callback = hold_callback,
@@ -223,12 +232,17 @@ local function patchBurrowTopBar(plugin)
 
                 local left_slot = 1
                 if show_home and self.left1_icon then
+                    -- Use Burrow's optically normalized Home glyph while
+                    -- preserving the full-size toolbar slot and touch target.
+                    local home_visual_size = math.max(1,
+                        math.floor(self.icon_size * 1.00 + 0.5))
                     self.left1_button = makeButton(self,
-                        self.left1_icon,
+                        "burrow.home",
                         self.left1_icon_tap_callback,
                         self.left1_icon_hold_callback,
                         self.icon_size,
-                        false)
+                        false,
+                        home_visual_size)
                     self.left1_button_container = placeAtSide(self, self.left1_button, true, left_slot)
                     left_slot = left_slot + 1
                 end
@@ -264,28 +278,23 @@ local function patchBurrowTopBar(plugin)
                         true)
 
                     if logo_only_right then
-                        -- Dedicated minimal mode: only the badger remains. Keep
-                        -- the icon in the upper portion of the bar and reserve
-                        -- clear space below it before the first row of covers.
+                        -- Dedicated minimal mode: only the badger remains.
+                        -- The hero card begins immediately after this toolbar,
+                        -- so centering inside the full toolbar height centers the
+                        -- badger in the entire gap between the top of the library
+                        -- and the top edge of the hero card.
                         local logo_right_margin = scaledBase(10)
                         local before = math.max(0,
                             self.width - logo_right_margin - self.center_button:getSize().w)
                         local after = math.max(0, logo_right_margin)
-                        local logo_area = Geom:new {
-                            x = 0,
-                            y = 0,
-                            w = self.width,
-                            h = math.max(1, self.titlebar_height - logo_bottom_clearance),
-                        }
                         self.center_button_container = LeftContainer:new {
-                            dimen = logo_area,
+                            dimen = self.dimen,
                             HorizontalGroup:new {
                                 HorizontalSpan:new { width = before },
                                 self.center_button,
                                 HorizontalSpan:new { width = after },
                             },
                         }
-                        self.center_button_container.overlap_offset = { 0, scaledBase(2) }
                     else
                         -- Keep the bird vertically centered when used as the
                         -- normal middle button, including reduced bar sizes.

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <path
+    d="m 28.000006,28.666666 v 12 h 8.000001 L 36,25 h 5 l -4.999993,-4.833334 v -7.499999 h -4.000001 v 3.5 L 24.000005,8.1666666 7,25 h 5 l 2e-6,15.666666 h 8.000002 v -12 z"
+    fill="none"
+    stroke="#000000"
+    stroke-width="2.4"
+    stroke-linecap="butt"
+    stroke-linejoin="miter"/>
+</svg>
