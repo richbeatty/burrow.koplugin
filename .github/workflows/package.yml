@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - agent/self-updater
     paths:
       - 'README.md'
       - 'INSTALL.txt'
