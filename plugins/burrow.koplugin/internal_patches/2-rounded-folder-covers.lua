@@ -449,7 +449,7 @@ local function patchCoverBrowser(plugin)
         local image_y = fy + math.floor((frame_dimen.h - image_size.h) / 2)
         
         local cover_border = Screen:scaleBySize(folder_border)
-        bb:paintBorder(image_x, image_y, image_size.w, image_size.h, cover_border, Blitbuffer.COLOR_BLACK, 0, false)
+        bb:paintBorder(image_x, image_y, image_size.w, image_size.h, cover_border, Blitbuffer.COLOR_WHITE, 0, false)
 
         local TL, TR, BL, BR = corners.tl, corners.tr, corners.bl, corners.br
         if not (TL and TR and BL and BR) then return end

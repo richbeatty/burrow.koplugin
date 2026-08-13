@@ -4,6 +4,17 @@ All notable changes to Burrow will be documented here.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-08-12
+
+### Changed
+
+- Centered the logo-only Burrow badger vertically in the header space above the hero card
+- Added a Burrow-scoped Home icon with optically normalized stroke weight while keeping the original toolbar icons and touch-target spacing
+
+### Fixed
+
+- Prevented automatic-series and physical-folder borders from appearing as bright outlines in KOReader night mode
+
 ## [0.4.0] - 2026-08-12
 
 ### Added

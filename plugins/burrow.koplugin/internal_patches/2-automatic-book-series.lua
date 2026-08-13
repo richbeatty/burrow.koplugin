@@ -452,7 +452,11 @@ local function automaticSeriesPatch(plugin)
                                 margin = 0,
                                 padding = 0,
                                 bordersize = cover_border,
-                                color = Blitbuffer.COLOR_GRAY_3,
+                                -- Night mode is inverted rendering. White here is
+                                -- invisible on the normal white background and
+                                -- inverts to black on the dark background, while
+                                -- preserving the exact border geometry.
+                                color = Blitbuffer.COLOR_WHITE,
                                 image,
                             }
                         end
