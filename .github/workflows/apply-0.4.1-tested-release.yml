@@ -1,0 +1,68 @@
+name: Apply Burrow 0.4.1 tested release
+
+on:
+  push:
+    branches:
+      - agent/release-0.4.1
+
+permissions:
+  contents: write
+
+jobs:
+  apply-tested-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/release-0.4.1
+          fetch-depth: 0
+
+      - name: Verify 0.4.0 base files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object plugins/burrow.koplugin/burrow_list_folder_covers.lua)" = "7b5566880d5313504cdf7dba1873366eedfcd001"
+          test "$(git hash-object plugins/burrow.koplugin/internal_patches/2-a-burrow-simple-topbar.lua)" = "08c2f4e6b6e1b198f4358aaecf84ad463251da77"
+          test "$(git hash-object plugins/burrow.koplugin/internal_patches/2-automatic-book-series.lua)" = "c3ea907ab8049b5c2a68df3dc6ee2e198abdd05d"
+          test "$(git hash-object plugins/burrow.koplugin/internal_patches/2-rounded-folder-covers.lua)" = "5a8f13fafd161c8b25db425b904e200e8baf1e0e"
+          test "$(git hash-object plugins/burrow.koplugin/burrow_version.lua)" = "f7aaa6390eafc7212120da0f1008bdcbd1caad22"
+          test "$(git hash-object CHANGELOG.md)" = "ea96af07638526f47c142a467e63e65fa4f066c3"
+          test ! -e plugins/burrow.koplugin/icons/burrow.home.svg
+
+      - name: Reconstruct and apply verified patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/burrow-0.4.1.patch.gz.b64 <<'PATCH64'
+          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
+          PATCH64
+          tr -d '[:space:]' < /tmp/burrow-0.4.1.patch.gz.b64 | base64 -d > /tmp/burrow-0.4.1.patch.gz
+          echo "d3690e83745eefca9f57c37c15634552367841afd648d24d9bff5109002a245d  /tmp/burrow-0.4.1.patch.gz" | sha256sum -c -
+          gunzip -c /tmp/burrow-0.4.1.patch.gz > /tmp/burrow-0.4.1.patch
+          echo "95d8e96bf164e790e0c57702c47c4b4a092bc41dd7f2011f424d840c86cb6bcc  /tmp/burrow-0.4.1.patch" | sha256sum -c -
+          git apply --check /tmp/burrow-0.4.1.patch
+          git apply /tmp/burrow-0.4.1.patch
+
+      - name: Verify exact 0.4.1 result
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object plugins/burrow.koplugin/burrow_list_folder_covers.lua)" = "ebf6d8b69ce2551c1842ef849e5dc9eb1a357a41"
+          test "$(git hash-object plugins/burrow.koplugin/internal_patches/2-a-burrow-simple-topbar.lua)" = "b171c9980567af7b38e943d18f6dcaf61c8f0182"
+          test "$(git hash-object plugins/burrow.koplugin/internal_patches/2-automatic-book-series.lua)" = "93d4ab1f936654b2bbda32340984736f7bf70c1b"
+          test "$(git hash-object plugins/burrow.koplugin/internal_patches/2-rounded-folder-covers.lua)" = "2b487c06b825e7c5aaebe8ffbf574bec39916d90"
+          test "$(git hash-object plugins/burrow.koplugin/burrow_version.lua)" = "4f073d054c1429fb0e295f3571e10e74eadd02be"
+          test "$(git hash-object CHANGELOG.md)" = "579d7a357cbfb1be508b251ea965c0cc0ffc1466"
+          test "$(git hash-object plugins/burrow.koplugin/icons/burrow.home.svg)" = "f970eab4d59136cdd170e3046eb26fb521e1bc05"
+
+      - name: Commit tested release files
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/apply-0.4.1-tested-release.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Release Burrow 0.4.1"
+          git push origin HEAD:agent/release-0.4.1
