@@ -16,9 +16,12 @@ local BurrowSettings = require("burrow_settings")
 
 -- The updater is optional at runtime. A problem in update support must never
 -- stop the core Burrow library from loading.
-local updater_ok, BurrowUpdater = pcall(require, "burrow_updater_prepare_fix")
+local updater_ok, BurrowUpdater = pcall(require, "burrow_updater_entry")
 if not updater_ok then
     logger.warn(burrow_debug.logprefix, "Burrow updater could not be loaded", BurrowUpdater)
+elseif BurrowUpdater._burrow_dynamic_prepare_dispatch ~= true then
+    updater_ok = false
+    logger.warn(burrow_debug.logprefix, "Burrow updater dispatch guard was not installed")
 end
 
 -- Keep Burrow visible in Plugin Management when a critical prerequisite fails.
