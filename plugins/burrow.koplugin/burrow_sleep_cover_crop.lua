@@ -9,12 +9,78 @@ package.loaded[MODULE_KEY] = Module
 
 local SETTING = "burrow_screensaver_crop_cover_to_fill"
 
-function Module.apply()
+local function makeSettingsItem(_)
+    return {
+        text = _("Crop sleep-screen book cover to fill"),
+        help_text = _("Scale the current book cover proportionally until the sleep screen is completely filled, then crop the excess from the edges. This avoids stretching or distorting the cover."),
+        _burrow_sleep_cover_crop_setting = true,
+        checked_func = function()
+            return G_reader_settings:isTrue(SETTING)
+        end,
+        callback = function()
+            G_reader_settings:saveSetting(
+                SETTING,
+                not G_reader_settings:isTrue(SETTING)
+            )
+            if type(G_reader_settings.flush) == "function" then
+                G_reader_settings:flush()
+            end
+        end,
+    }
+end
+
+local function attachBurrowSettings(plugin)
+    if type(plugin) ~= "table"
+        or plugin._burrow_sleep_cover_settings_patched
+        or type(plugin.addToMainMenu) ~= "function"
+    then
+        return
+    end
+
+    plugin._burrow_sleep_cover_settings_patched = true
+    local original_add_to_main_menu = plugin.addToMainMenu
+    local _ = require("l10n.gettext")
+
+    function plugin:addToMainMenu(menu_items)
+        original_add_to_main_menu(self, menu_items)
+
+        local root = menu_items and menu_items.filemanager_display_mode
+        local items = root and root.sub_item_table
+        if type(items) ~= "table" then return end
+
+        local appearance
+        for _, item in ipairs(items) do
+            if type(item) == "table"
+                and (item._burrow_soft_palette_appearance or item.text == _("Appearance"))
+            then
+                appearance = item
+                break
+            end
+        end
+
+        local appearance_items = appearance and appearance.sub_item_table
+        if type(appearance_items) ~= "table" then return end
+
+        for _, item in ipairs(appearance_items) do
+            if type(item) == "table" and item._burrow_sleep_cover_crop_setting then
+                return
+            end
+        end
+
+        table.insert(appearance_items, makeSettingsItem(_))
+    end
+end
+
+function Module.apply(plugin)
+    -- Use Burrow's existing menu callback rather than modifying KOReader's
+    -- native Sleep screen menu. This keeps the setting isolated to
+    -- Burrow Settings > Appearance and avoids touching the global menu builder.
+    attachBurrowSettings(plugin)
+
     if Module.applied then return true end
 
     local ImageWidget = require("ui/widget/imagewidget")
     local Screensaver = require("ui/screensaver")
-    local _ = require("l10n.gettext")
 
     if G_reader_settings:readSetting(SETTING) == nil then
         G_reader_settings:saveSetting(SETTING, true)
@@ -82,77 +148,6 @@ function Module.apply()
                 error(results[1])
             end
             return unpack(results)
-        end
-    end
-
-    -- Keep this beside KOReader's own stretch/rotation controls:
-    -- Sleep screen > Wallpaper > Border fill, rotation, and fit.
-    local screensaver_menu = require("ui/elements/screensaver_menu")
-    local wallpaper_menu
-    for _, item in ipairs(screensaver_menu or {}) do
-        if item.text == _("Wallpaper") then
-            wallpaper_menu = item
-            break
-        end
-    end
-
-    local fit_menu
-    local wallpaper_items = wallpaper_menu and wallpaper_menu.sub_item_table
-    if type(wallpaper_items) == "table" then
-        for _, item in ipairs(wallpaper_items) do
-            if item.text == _("Border fill, rotation, and fit") then
-                fit_menu = item
-                break
-            end
-        end
-    end
-
-    local fit_items = fit_menu and fit_menu.sub_item_table
-    if type(fit_items) == "table" then
-        local already_present = false
-        for _, item in ipairs(fit_items) do
-            if item._burrow_sleep_cover_crop_to_fill then
-                already_present = true
-                break
-            end
-        end
-
-        if not already_present then
-            local crop_item = {
-                text = _("Crop book cover to fill screen"),
-                help_text = _("Scale the current book cover proportionally until the sleep screen is completely filled, then crop the excess from the edges. This avoids stretching or distorting the cover."),
-                _burrow_sleep_cover_crop_to_fill = true,
-                enabled_func = function()
-                    return G_reader_settings:readSetting("screensaver_type") == "cover"
-                end,
-                checked_func = function()
-                    return G_reader_settings:isTrue(SETTING)
-                end,
-                callback = function()
-                    G_reader_settings:saveSetting(
-                        SETTING,
-                        not G_reader_settings:isTrue(SETTING)
-                    )
-                    if type(G_reader_settings.flush) == "function" then
-                        G_reader_settings:flush()
-                    end
-                end,
-            }
-
-            -- The native Stretch control is the only text_func item in this
-            -- submenu today. Insert Crop immediately after it, with a safe
-            -- fallback to the end if KOReader changes the menu structure.
-            local insert_at = #fit_items + 1
-            for index, item in ipairs(fit_items) do
-                if type(item.text_func) == "function"
-                    and type(item.checked_func) == "function"
-                    and type(item.callback) == "function"
-                then
-                    insert_at = index + 1
-                    break
-                end
-            end
-            table.insert(fit_items, insert_at, crop_item)
         end
     end
 
