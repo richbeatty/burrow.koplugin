@@ -9,101 +9,6 @@ package.loaded[MODULE_KEY] = Module
 
 local SETTING = "burrow_screensaver_crop_cover_to_fill"
 
-local function makeCropItem(_)
-    return {
-        text = _("Crop book cover to fill screen"),
-        help_text = _("Scale the current book cover proportionally until the sleep screen is completely filled, then crop the excess from the edges. This avoids stretching or distorting the cover."),
-        _burrow_sleep_cover_crop_to_fill = true,
-        enabled_func = function()
-            return G_reader_settings:readSetting("screensaver_type") == "cover"
-        end,
-        checked_func = function()
-            return G_reader_settings:isTrue(SETTING)
-        end,
-        callback = function()
-            G_reader_settings:saveSetting(
-                SETTING,
-                not G_reader_settings:isTrue(SETTING)
-            )
-            if type(G_reader_settings.flush) == "function" then
-                G_reader_settings:flush()
-            end
-        end,
-    }
-end
-
-local function findFitItems(items, _, seen)
-    if type(items) ~= "table" then return nil end
-    seen = seen or {}
-    if seen[items] then return nil end
-    seen[items] = true
-
-    for _, item in pairs(items) do
-        if type(item) == "table" then
-            if item.text == _("Border fill, rotation, and fit")
-                and type(item.sub_item_table) == "table"
-            then
-                return item.sub_item_table
-            end
-            local nested = findFitItems(item.sub_item_table, _, seen)
-            if nested then return nested end
-        end
-    end
-end
-
-local function injectCropItem(menu_items, _)
-    local fit_items = findFitItems(menu_items, _)
-    if type(fit_items) ~= "table" then return false end
-
-    for _, item in ipairs(fit_items) do
-        if item._burrow_sleep_cover_crop_to_fill then
-            return true
-        end
-    end
-
-    local crop_item = makeCropItem(_)
-
-    -- Keep Crop immediately before KOReader's native Rotate option. In current
-    -- KOReader this places it directly after Stretch cover to fit screen, while
-    -- avoiding assumptions about the Stretch item's dynamic text_func label.
-    local insert_at = #fit_items + 1
-    for index, item in ipairs(fit_items) do
-        if item.text == _("Rotate cover for best fit") then
-            insert_at = index
-            break
-        end
-    end
-    table.insert(fit_items, insert_at, crop_item)
-    return true
-end
-
-local function wrapMenuBuilder(class, class_marker, menu_kind, order_module, _)
-    if type(class) ~= "table" or class[class_marker] then return end
-    if type(class.setUpdateItemTable) ~= "function" then return end
-
-    class[class_marker] = true
-    local original_set_update_item_table = class.setUpdateItemTable
-
-    function class:setUpdateItemTable(...)
-        local results = { original_set_update_item_table(self, ...) }
-
-        -- KOReader creates the sleep-screen submenu with dofile() each time the
-        -- menu is assembled. Inject into that actual live menu tree, then redo
-        -- the final sort so the new item is present in tab_item_table too.
-        if injectCropItem(self.menu_items, _) then
-            local MenuSorter = require("ui/menusorter")
-            local order = require(order_module)
-            self.tab_item_table = MenuSorter:mergeAndSort(
-                menu_kind,
-                self.menu_items,
-                order
-            )
-        end
-
-        return unpack(results)
-    end
-end
-
 function Module.apply()
     if Module.applied then return true end
 
@@ -180,27 +85,76 @@ function Module.apply()
         end
     end
 
-    -- KOReader does not require() this menu. ReaderMenu and FileManagerMenu each
-    -- dofile() frontend/ui/elements/screensaver_menu.lua when their live menu is
-    -- built. Patching a separately required copy therefore cannot affect what
-    -- the user sees. Wrap those two builders and inject into the real tree.
-    local ReaderMenu = require("apps/reader/modules/readermenu")
-    local FileManagerMenu = require("apps/filemanager/filemanagermenu")
+    -- Keep this beside KOReader's own stretch/rotation controls:
+    -- Sleep screen > Wallpaper > Border fill, rotation, and fit.
+    local screensaver_menu = require("ui/elements/screensaver_menu")
+    local wallpaper_menu
+    for _, item in ipairs(screensaver_menu or {}) do
+        if item.text == _("Wallpaper") then
+            wallpaper_menu = item
+            break
+        end
+    end
 
-    wrapMenuBuilder(
-        ReaderMenu,
-        "_burrow_sleep_cover_crop_menu_v2",
-        "reader",
-        "ui/elements/reader_menu_order",
-        _
-    )
-    wrapMenuBuilder(
-        FileManagerMenu,
-        "_burrow_sleep_cover_crop_menu_v2",
-        "filemanager",
-        "ui/elements/filemanager_menu_order",
-        _
-    )
+    local fit_menu
+    local wallpaper_items = wallpaper_menu and wallpaper_menu.sub_item_table
+    if type(wallpaper_items) == "table" then
+        for _, item in ipairs(wallpaper_items) do
+            if item.text == _("Border fill, rotation, and fit") then
+                fit_menu = item
+                break
+            end
+        end
+    end
+
+    local fit_items = fit_menu and fit_menu.sub_item_table
+    if type(fit_items) == "table" then
+        local already_present = false
+        for _, item in ipairs(fit_items) do
+            if item._burrow_sleep_cover_crop_to_fill then
+                already_present = true
+                break
+            end
+        end
+
+        if not already_present then
+            local crop_item = {
+                text = _("Crop book cover to fill screen"),
+                help_text = _("Scale the current book cover proportionally until the sleep screen is completely filled, then crop the excess from the edges. This avoids stretching or distorting the cover."),
+                _burrow_sleep_cover_crop_to_fill = true,
+                enabled_func = function()
+                    return G_reader_settings:readSetting("screensaver_type") == "cover"
+                end,
+                checked_func = function()
+                    return G_reader_settings:isTrue(SETTING)
+                end,
+                callback = function()
+                    G_reader_settings:saveSetting(
+                        SETTING,
+                        not G_reader_settings:isTrue(SETTING)
+                    )
+                    if type(G_reader_settings.flush) == "function" then
+                        G_reader_settings:flush()
+                    end
+                end,
+            }
+
+            -- The native Stretch control is the only text_func item in this
+            -- submenu today. Insert Crop immediately after it, with a safe
+            -- fallback to the end if KOReader changes the menu structure.
+            local insert_at = #fit_items + 1
+            for index, item in ipairs(fit_items) do
+                if type(item.text_func) == "function"
+                    and type(item.checked_func) == "function"
+                    and type(item.callback) == "function"
+                then
+                    insert_at = index + 1
+                    break
+                end
+            end
+            table.insert(fit_items, insert_at, crop_item)
+        end
+    end
 
     Module.applied = true
     return true
