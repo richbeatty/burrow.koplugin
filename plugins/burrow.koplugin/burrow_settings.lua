@@ -388,6 +388,8 @@ function BurrowSettings:removeAllSettings()
         "burrow_home_store_label_size_percent",
         "burrow_store_catalog_url",
         "burrow_store_catalog_title",
+        "burrow_bionic_reading",
+        "burrow_document_profiles",
     }
     for _, key in ipairs(keys) do
         G_reader_settings:delSetting(key)
