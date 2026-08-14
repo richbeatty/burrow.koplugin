@@ -521,6 +521,19 @@ local function applySettingsCleanup(plugin)
 
         local store = findItem(old_items, _("Store")) or findItem(old_items, _("Store unavailable"))
         append(clean_items, store)
+
+        -- This setting is created by Burrow's core menu so it remains available
+        -- even if the later settings compositor is unavailable. Carry that exact
+        -- item into the cleaned menu instead of recreating or injecting it later.
+        local sleep_cover_crop
+        for _, item in ipairs(old_items) do
+            if type(item) == "table" and item._burrow_sleep_cover_crop_setting then
+                sleep_cover_crop = item
+                break
+            end
+        end
+        append(clean_items, sleep_cover_crop)
+
         append(clean_items, { text = _("Advanced"), sub_item_table = advanced_items })
         append(clean_items, findItem(old_items, _("About Burrow")))
 

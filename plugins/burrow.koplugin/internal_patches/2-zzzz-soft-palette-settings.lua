@@ -26,7 +26,6 @@ function Module.apply(plugin)
     local T = require("ffi/util").template
 
     local ORNAMENT_SETTING = "burrow_soft_palette_recolor_ornaments"
-    local SLEEP_COVER_CROP_SETTING = "burrow_screensaver_crop_cover_to_fill"
 
     -- Mark the real reader CreDocument before CRengine loads it. The soft
     -- palette EPUB shadow loader checks this marker so file-browser cover and
@@ -312,25 +311,23 @@ function Module.apply(plugin)
         local items = root and root.sub_item_table
         if type(items) ~= "table" then return end
 
-        local appearance
+        local has_appearance = false
         local has_reading = false
         for _, item in ipairs(items) do
-            if type(item) == "table"
-                and (item._burrow_soft_palette_appearance or item.text == _("Appearance"))
-            then
-                appearance = item
+            if item._burrow_soft_palette_appearance then
+                has_appearance = true
             end
             if item._burrow_reading_settings then
                 has_reading = true
             end
         end
 
-        local function enabled()
-            return BurrowSettings:isFeatureEnabled("soft_palette")
-        end
+        if not has_appearance then
+            local function enabled()
+                return BurrowSettings:isFeatureEnabled("soft_palette")
+            end
 
-        if not appearance then
-            appearance = {
+            local appearance = {
                 text = _("Appearance"),
                 _burrow_soft_palette_appearance = true,
                 sub_item_table = {
@@ -369,41 +366,35 @@ function Module.apply(plugin)
             table.insert(items, math.min(2, #items + 1), appearance)
         end
 
-        -- The crop setting is deliberately ensured after Appearance exists,
-        -- rather than only when Appearance is created. This makes it resilient
-        -- to other Burrow wrappers reusing or pre-creating the Appearance menu.
-        local appearance_items = appearance.sub_item_table
-        if type(appearance_items) ~= "table" then
-            appearance_items = {}
-            appearance.sub_item_table = appearance_items
-        end
-
-        local has_crop = false
-        for _, item in ipairs(appearance_items) do
-            if type(item) == "table" and item._burrow_sleep_cover_crop_setting then
-                has_crop = true
-                break
+        -- The sleep-cover crop toggle is created by Burrow's core menu so it
+        -- remains available even if this final Appearance compositor fails.
+        -- When Appearance is available, move that exact proven item into it
+        -- instead of creating a second toggle or adding another menu wrapper.
+        local appearance_menu
+        local crop_index
+        for index, item in ipairs(items) do
+            if type(item) == "table" and item._burrow_soft_palette_appearance then
+                appearance_menu = item
+            elseif type(item) == "table" and item._burrow_sleep_cover_crop_setting then
+                crop_index = index
             end
         end
 
-        if not has_crop then
-            table.insert(appearance_items, {
-                text = _("Crop sleep-screen book cover to fill"),
-                help_text = _("Scale the current book cover proportionally until the sleep screen is completely filled, then crop the excess from the edges. This avoids stretching or distorting the cover."),
-                _burrow_sleep_cover_crop_setting = true,
-                checked_func = function()
-                    return G_reader_settings:isTrue(SLEEP_COVER_CROP_SETTING)
-                end,
-                callback = function()
-                    G_reader_settings:saveSetting(
-                        SLEEP_COVER_CROP_SETTING,
-                        not G_reader_settings:isTrue(SLEEP_COVER_CROP_SETTING)
-                    )
-                    if type(G_reader_settings.flush) == "function" then
-                        G_reader_settings:flush()
-                    end
-                end,
-            })
+        if appearance_menu
+            and crop_index
+            and type(appearance_menu.sub_item_table) == "table"
+        then
+            local crop_item = table.remove(items, crop_index)
+            local has_crop = false
+            for _, item in ipairs(appearance_menu.sub_item_table) do
+                if type(item) == "table" and item._burrow_sleep_cover_crop_setting then
+                    has_crop = true
+                    break
+                end
+            end
+            if not has_crop then
+                table.insert(appearance_menu.sub_item_table, crop_item)
+            end
         end
 
         if not has_reading then
