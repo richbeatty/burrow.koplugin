@@ -117,6 +117,44 @@ BurrowLoader:loadEarlyModules()
 local Burrow = WidgetContainer:extend {
     name = "burrow",
 }
+
+-- Bionic Reading is loaded only with Burrow Quick Settings. When present, let
+-- it mark the actual ReaderUI document during DocSettingsLoad so its CRengine
+-- shadow-file hook never touches File Manager metadata/cover probes.
+local BionicReading = package.loaded["burrow.bionic_reading"]
+if type(BionicReading) == "table"
+    and type(BionicReading.attachPluginClass) == "function"
+then
+    local ok, err = pcall(BionicReading.attachPluginClass, Burrow)
+    if not ok then
+        logger.warn(burrow_debug.logprefix, "Bionic Reading reader hook could not attach", err)
+    end
+end
+
+local inheritance_ok, DocumentInheritance = pcall(
+    require,
+    "burrow_document_inheritance"
+)
+if inheritance_ok
+    and type(DocumentInheritance) == "table"
+    and type(DocumentInheritance.attachPluginClass) == "function"
+then
+    local ok, err = pcall(DocumentInheritance.attachPluginClass, Burrow)
+    if not ok then
+        logger.warn(
+            burrow_debug.logprefix,
+            "Last-used document settings hook could not attach",
+            err
+        )
+    end
+else
+    logger.warn(
+        burrow_debug.logprefix,
+        "Last-used document settings module could not load",
+        DocumentInheritance
+    )
+end
+
 Burrow._compatibility = compatibility
 Burrow._compatibility_notice = compatibility.warning
 
