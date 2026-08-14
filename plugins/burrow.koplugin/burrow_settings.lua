@@ -4,6 +4,12 @@ local BurrowSettings = {}
 
 BurrowSettings.features = {
     {
+        id = "soft_palette",
+        text = _("Soft light and dark palette"),
+        help_text = _("Replace KOReader's pure white and black UI source colors with softer neutral tones. Night mode uses KOReader's native inversion."),
+        default = true,
+    },
+    {
         id = "library_visuals",
         text = _("Burrow library styling"),
         help_text = _("Rounded covers, folder styling, captions, badges, the top bar, hero card, and the expanded cover grid."),
@@ -154,6 +160,17 @@ function BurrowSettings:getModuleManifest()
             depends = { "library_core" },
         })
     end
+
+    -- Apply the shared source palette before any other early UI module builds
+    -- widgets or icons. It is its own guarded feature so a palette conflict can
+    -- be quarantined without disabling Quick Settings, the library, or reader.
+    if self:isFeatureEnabled("soft_palette") then
+        add("soft_palette", "2-soft-palette.lua", "early", {
+            filename = "2-soft-palette.lua",
+            feature = "soft_palette",
+        })
+    end
+
     if self:isFeatureEnabled("quick_settings") then
         add("quick_settings", "2-quick-settings.lua", "early", {
             filename = "2-quick-settings.lua",
