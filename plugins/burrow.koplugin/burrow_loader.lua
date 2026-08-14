@@ -355,6 +355,7 @@ end
 function Loader:getUserNotices()
     local notices = {}
     local labels = {
+        soft_palette = "Soft light/dark palette",
         library_visuals = "Library styling",
         library_navigation = "Library navigation",
         settings_menu = "Burrow Settings",
