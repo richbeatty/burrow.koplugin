@@ -127,13 +127,41 @@ local function resolveLiveFooter(footer)
     return reader and reader.footer or nil
 end
 
+local function humanizeTimeLeft(value)
+    if type(value) ~= "string" then return value end
+
+    -- KOReader's classic statistics duration is hours:minutes (for example,
+    -- "00:01"). Only rewrite that exact shape. If KOReader returns another
+    -- duration format now or in the future, keep it untouched.
+    local hours_text, minutes_text = value:match("^(%d+):(%d%d)$")
+    local hours = tonumber(hours_text)
+    local minutes = tonumber(minutes_text)
+    if hours == nil or minutes == nil or minutes > 59 then
+        return value
+    end
+
+    local total_minutes = hours * 60 + minutes
+    if total_minutes < 1 then
+        return _("<1 min")
+    elseif total_minutes < 60 then
+        return T(_("%1 min"), total_minutes)
+    end
+
+    local whole_hours = math.floor(total_minutes / 60)
+    local remaining_minutes = total_minutes % 60
+    if remaining_minutes == 0 then
+        return T(_("%1 hr"), whole_hours)
+    end
+    return T(_("%1 hr %2 min"), whole_hours, remaining_minutes)
+end
+
 local function timeForPages(footer, pages)
     if not footer.ui or not footer.ui.statistics or type(pages) ~= "number" then
         return nil
     end
     local ok, value = pcall(footer.ui.statistics.getTimeForPages, footer.ui.statistics, pages)
     if not ok or not value or value == "" or value == _("N/A") then return nil end
-    return value
+    return humanizeTimeLeft(value)
 end
 
 local function pageText(footer)
