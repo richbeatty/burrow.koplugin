@@ -111,7 +111,7 @@ if compatibility.warning then
 end
 
 -- Early optional modules are isolated by feature. Their failure is reported by
--- the loader but does not prevent the core Burrow library from starting.
+-- the loader but does not prevent the core library from starting.
 BurrowLoader:loadEarlyModules()
 
 local Burrow = WidgetContainer:extend {
