@@ -9,74 +9,7 @@ package.loaded[MODULE_KEY] = Module
 
 local SETTING = "burrow_screensaver_crop_cover_to_fill"
 
-local function makeSettingsItem(_)
-    return {
-        text = _("Crop sleep-screen book cover to fill"),
-        help_text = _("Scale the current book cover proportionally until the sleep screen is completely filled, then crop the excess from the edges. This avoids stretching or distorting the cover."),
-        _burrow_sleep_cover_crop_setting = true,
-        checked_func = function()
-            return G_reader_settings:isTrue(SETTING)
-        end,
-        callback = function()
-            G_reader_settings:saveSetting(
-                SETTING,
-                not G_reader_settings:isTrue(SETTING)
-            )
-            if type(G_reader_settings.flush) == "function" then
-                G_reader_settings:flush()
-            end
-        end,
-    }
-end
-
-local function attachBurrowSettings(plugin)
-    if type(plugin) ~= "table"
-        or plugin._burrow_sleep_cover_settings_patched
-        or type(plugin.addToMainMenu) ~= "function"
-    then
-        return
-    end
-
-    plugin._burrow_sleep_cover_settings_patched = true
-    local original_add_to_main_menu = plugin.addToMainMenu
-    local _ = require("l10n.gettext")
-
-    function plugin:addToMainMenu(menu_items)
-        original_add_to_main_menu(self, menu_items)
-
-        local root = menu_items and menu_items.filemanager_display_mode
-        local items = root and root.sub_item_table
-        if type(items) ~= "table" then return end
-
-        local appearance
-        for _, item in ipairs(items) do
-            if type(item) == "table"
-                and (item._burrow_soft_palette_appearance or item.text == _("Appearance"))
-            then
-                appearance = item
-                break
-            end
-        end
-
-        local appearance_items = appearance and appearance.sub_item_table
-        if type(appearance_items) ~= "table" then return end
-
-        for _, item in ipairs(appearance_items) do
-            if type(item) == "table" and item._burrow_sleep_cover_crop_setting then
-                return
-            end
-        end
-
-        table.insert(appearance_items, makeSettingsItem(_))
-    end
-end
-
-function Module.apply(plugin)
-    -- Use Burrow's existing menu callback rather than modifying KOReader's
-    -- native Sleep screen menu. This keeps the setting isolated to
-    -- Burrow Settings > Appearance and avoids touching the global menu builder.
-    attachBurrowSettings(plugin)
-
+function Module.apply()
     if Module.applied then return true end
 
     local ImageWidget = require("ui/widget/imagewidget")

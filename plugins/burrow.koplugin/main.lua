@@ -179,7 +179,7 @@ if crop_ok
     and type(SleepCoverCrop) == "table"
     and type(SleepCoverCrop.apply) == "function"
 then
-    local apply_ok, applied, apply_error = pcall(SleepCoverCrop.apply, Burrow)
+    local apply_ok, applied, apply_error = pcall(SleepCoverCrop.apply)
     if not apply_ok or applied == false then
         logger.warn(
             burrow_debug.logprefix,
