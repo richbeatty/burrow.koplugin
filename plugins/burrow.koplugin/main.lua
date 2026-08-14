@@ -171,6 +171,30 @@ end
 -- failed group is disabled without preventing unrelated Burrow features.
 BurrowLoader:applyInstanceModules(Burrow)
 
+-- Sleep-screen crop-to-fill is intentionally independent from the soft palette
+-- and library features. Keep it isolated so a device-specific screensaver
+-- failure cannot prevent Burrow from starting.
+local crop_ok, SleepCoverCrop = pcall(require, "burrow_sleep_cover_crop")
+if crop_ok
+    and type(SleepCoverCrop) == "table"
+    and type(SleepCoverCrop.apply) == "function"
+then
+    local apply_ok, applied, apply_error = pcall(SleepCoverCrop.apply)
+    if not apply_ok or applied == false then
+        logger.warn(
+            burrow_debug.logprefix,
+            "Sleep-screen cover crop could not be applied",
+            apply_ok and apply_error or applied
+        )
+    end
+else
+    logger.warn(
+        burrow_debug.logprefix,
+        "Sleep-screen cover crop module could not load",
+        SleepCoverCrop
+    )
+end
+
 -- Older ProjectTitle and folder-cover builds may leave a generated collage in
 -- an entry's pt_cover_path/burrow_cover_path field. That is cache artwork, not
 -- a user-selected folder cover. Only recognize an actual cover/folder image
