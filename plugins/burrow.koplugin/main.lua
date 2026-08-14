@@ -111,7 +111,7 @@ if compatibility.warning then
 end
 
 -- Early optional modules are isolated by feature. Their failure is reported by
--- the loader but does not prevent the core library from starting.
+-- the loader but does not prevent the core Burrow library from starting.
 BurrowLoader:loadEarlyModules()
 
 local Burrow = WidgetContainer:extend {
@@ -179,7 +179,7 @@ if crop_ok
     and type(SleepCoverCrop) == "table"
     and type(SleepCoverCrop.apply) == "function"
 then
-    local apply_ok, applied, apply_error = pcall(SleepCoverCrop.apply, Burrow)
+    local apply_ok, applied, apply_error = pcall(SleepCoverCrop.apply)
     if not apply_ok or applied == false then
         logger.warn(
             burrow_debug.logprefix,
