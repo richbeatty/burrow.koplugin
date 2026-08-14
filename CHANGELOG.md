@@ -4,6 +4,44 @@ All notable changes to Burrow will be documented here.
 
 ## [Unreleased]
 
+## [0.4.3-beta.2] - 2026-08-13
+
+### Added
+
+- Added Bionic Reading as a persistent Reader Controls toggle for EPUB books
+- Added real bold fixation prefixes based on CrossPoint Focus Reading: 45% of each word, floored, with a 1-character minimum and 9-character maximum
+- Added cached shadow-EPUB rendering so Bionic Reading leaves the original EPUB untouched and continues using the currently selected font family
+- Added Search in Book compatibility across Bionic inline text-node boundaries
+- Added percentage and nearby semantic text anchoring to reduce reading-position jumps when Bionic Reading is toggled
+- Added last-used document-setting inheritance so the most recently established reader presentation follows into the next book
+- Added separate inherited profiles for reflowable `copt_*` settings and fixed-layout `kopt_*` settings, including the active reflowable font face/family mapping
+
+### Changed
+
+- Kept Bionic Reading as a fixed Reader Controls action rather than another configurable Reader button or Burrow Settings entry
+- Reader document settings now follow the latest established presentation while reading position, progress, bookmarks, highlights, annotations, search history, reading status, stylesheet selection, and typography-language data remain book-specific
+
+### Fixed
+
+- Prevented Bionic Reading initialization failures from quarantining the entire Quick Settings feature
+- Preserved Search in Book behavior while Bionic Reading splits words across bold/regular inline nodes
+- Prevented Bionic toggles from falling back to the beginning of the book when an XPointer from the normal DOM does not resolve cleanly against the Bionic shadow DOM
+
+### Known limitation
+
+- Toggling Bionic Reading can still occasionally move a few pages because real bold changes line wrapping and pagination; Burrow uses a nearby semantic text anchor with percentage fallback to keep the reader close to the same text
+
+## [0.4.3-beta.1] - 2026-08-13
+
+### Changed
+
+- Reader Controls now opens Burrow Quick Settings as a standalone top panel instead of automatically opening KOReader's bottom Text/Config panel underneath it
+
+### Fixed
+
+- Made the Text Reader Controls action close the top reader menu through KOReader's own ReaderMenu controller and open or reuse exactly one ReaderConfig dialog
+- Preserved KOReader's normal reader-menu behavior when Burrow Quick Settings is not configured to open first
+
 ## [0.4.2] - 2026-08-13
 
 ### Added
@@ -35,263 +73,4 @@ All notable changes to Burrow will be documented here.
 
 ### Fixed
 
-- Prevented Quick Settings swipes from activating action tiles when a swipe ends over a button
-- Kept frontlight and warmth slider dragging functional while consuming other Quick Settings swipes
-- Scoped the Home-style Menu pager replacement to Table of Contents instead of modifying every KOReader Menu
-- Restored the Home and Store footer while browsing Store after the beta.10 pager regression
-- Prevented the beta.10 pager customization from interfering with unrelated KOReader menus
-
-## [0.4.2-beta.10] - 2026-08-13
-
-### Changed
-
-- Replaced the Quick Settings Restart glyph with a power-style icon so Restart is visually distinct from Rotate
-- Replaced the older arrow-based paged-dialog footers with Burrow's Home-style page indicator: a long active pill with small inactive dots
-- Centered the Table of Contents page indicator at the bottom of the screen to match the Home library pager
-
-### Fixed
-
-- Restored four-way Quick Settings rotation so Rotate cycles through all four physical screen orientations
-- Restored rotation persistence between the library and reader
-- Persisted the selected orientation across a full KOReader restart by saving and explicitly restoring the File Manager rotation while rotation locking is enabled
-- Restored grid minimums down to one row or one column, allowing layouts such as 2x1, 1x3, and other rectangular combinations while retaining the 8x8 maximum
-- Improved automatic update checks so enabling Automatic update checks can immediately run a due check
-- Improved automatic update checks when KOReader starts offline by checking again after network connectivity becomes available
-- Kept automatic update checks on their recurring schedule while KOReader remains open
-- Added retry scheduling after failed automatic checks without allowing checks to run more frequently than hourly
-- Updated Book Information pagination to use the Home-style swipe-and-dots interface
-- Updated Table of Contents pagination to use the Home-style swipe-and-dots interface
-
-## [0.4.2-beta.9] - 2026-08-13
-
-### Changed
-
-- Promoted the updater, rotation, and grid recovery work to the prerelease channel for device testing
-
-### Fixed
-
-- Restored four-way Quick Settings rotation
-- Restored remembered rotation between File Manager and Reader
-- Restored one-row and one-column grid configurations
-- Improved automatic update-check triggering for the beta update channel
-
-## [0.4.1] - 2026-08-12
-
-### Changed
-
-- Centered the logo-only Burrow badger vertically in the header space above the hero card
-- Added a Burrow-scoped Home icon with optically normalized stroke weight while keeping the original toolbar icons and touch-target spacing
-
-### Fixed
-
-- Prevented automatic-series and physical-folder borders from appearing as bright outlines in KOReader night mode
-
-## [0.4.0] - 2026-08-12
-
-### Added
-
-- Added a cleaned-up Burrow Settings structure organized around Library, Navigation, Quick Settings, Store, Advanced, and About
-- Added independent controls for book, physical-folder, and series titles under covers
-- Added a Return to Library display option independent of automatic series grouping
-
-### Changed
-
-- Promoted Burrow out of beta as the first stable release
-- Moved automatic series grouping out of KOReader's stock File Browser settings and into Burrow Settings
-- Consolidated Quick Settings configuration under Burrow Settings
-- Unified book, physical-folder, and virtual-series cover geometry so all three use the same sizing policy
-- Kept cover size and spacing controls available from the cleaned-up Library settings
-- Reordered the cover rendering modules so rounded book geometry is established before automatic series processing and final scaling
-
-### Fixed
-
-- Kept Return to Library available for manually organized folders when automatic series grouping is disabled
-- Prevented titles from intersecting enlarged covers
-- Prevented physical-folder rendering from discarding the configured cover size
-- Corrected rebuilt cover tiles so the configured size is reapplied after reader returns and browser refreshes
-- Replaced heuristic physical-folder cover discovery with explicit cover references in the final layout pass
-
-## [0.3.8-beta] - 2026-08-06
-
-### Changed
-
-- Unified the Home and Store footer dimensions so the navigation remains the same size when switching screens
-- Made the Store respect the configured Home and Store label-size setting
-- Standardized the active-tab underline width across Home and Store
-
-## [0.3.7-beta] - 2026-08-05
-
-### Changed
-
-- Improved Store cover loading and short-term catalog caching
-- Reduced unnecessary cover-cache pruning and network requests
-- Refined the Home and Store footer spacing and active underline
-
-### Fixed
-
-- Hid the return arrow while the Burrow Home and Store footer is active
-- Hid page indicators on single-page Store menus
-- Increased spacing between the Burrow icon and the first row of Store covers
-- Repaired and compacted the Store download queue at startup
-- Prevented duplicate queued downloads and removed completed direct downloads from the queue
-- Persisted cleared download queues immediately
-
-## [0.3.6-beta] - 2026-08-05
-
-### Added
-
-- Extended the Home and Store footer to nested manual folders inside the configured library
-
-### Changed
-
-- Promoted the device-tested 0.3.6 build to public beta
-
-### Fixed
-
-- Anchored the folder and collection marker to the upper-left corner of the cover
-- Applied real rounded-corner masking to manual-folder artwork in Cover Grid and Cover List
-
-## [0.3.5-beta] - 2026-08-05
-
-### Added
-
-- Added the stacked-books series marker to physical folders and collection-style directory tiles in Cover Grid
-- Added the Burrow Return to Library icon to the corresponding Cover List row
-
-## [0.3.4-beta] - 2026-08-05
-
-### Fixed
-
-- Stopped the physical-folder consistency layer from rebuilding automatic-series tiles
-- Removed duplicated automatic-series covers and doubled series captions
-- Reduced physical-folder covers to the same caption-reserved height used by normal book covers
-- Kept automatic-series Cover Grid rendering on its native Burrow path while retaining rounded full-size folder artwork in Cover List
-
-## [0.3.3-beta] - 2026-08-05
-
-### Fixed
-
-- Prevented legacy ProjectTitle and generated folder-cover cache paths from being treated as custom folder images
-- Physical folders now use only a real folder-local cover image or the first available book cover
-- Published the folder fix under a new version so users do not receive a cached 0.3.2 package
-
-## [0.3.2-beta] - 2026-08-05
-
-### Added
-
-- Added a Burrow setting to show or hide numbered series badges on book covers
-
-### Changed
-
-- Made physical folders and automatic-series folders use the same cover presentation
-- Physical folders now use a custom folder cover when available, otherwise the first available book cover
-- Removed the multi-cover mosaic fallback from folder tiles
-
-### Fixed
-
-- Reworked Cover List folder styling so full-size rounded covers are applied during every row build
-- Prevented folder-name overlays and item-count circles from being redrawn over unified Cover Grid tiles
-
-## [0.3.1-beta] - 2026-08-05
-
-### Fixed
-
-- Made folder and automatic-series artwork use the full available cover size in Cover List
-- Applied the same rounded frame to folder and series artwork used for book covers in Cover List
-
-## [0.3.0-beta] - 2026-08-05
-
-### Added
-
-- Public beta documentation and device screenshots
-- Beta notes covering current compatibility and testing limits
-
-### Changed
-
-- Promoted Burrow from alpha to public beta
-- Updated the last-tested KOReader version to 2026.07.2
-
-### Fixed
-
-- Capitalized the Reading Controls and Quick Settings panel titles
-
-## [0.2.2-alpha] - 2026-08-05
-
-### Fixed
-
-- Made cover-size values above 100% render at the requested scale instead of being capped by the original tile dimensions
-- Corrected the capitalization of the Reading Controls heading
-
-## [0.2.1-alpha] - 2026-08-05
-
-### Added
-
-- Flexible KOReader compatibility policy with minimum and last-tested versions
-- Dependency-aware degraded mode for optional feature groups
-- Module status reporting and quarantined-feature retry controls
-- Guarded `burrow_library.lua` core runtime
-
-### Changed
-
-- Removed the exact KOReader version lock
-- Reduced `main.lua` to prerequisite checks, loader setup, and plugin-class creation
-- Moved the core library runtime into a guarded module
-
-### Fixed
-
-- Prevented one optional module failure from disabling unrelated Burrow features
-- Prevented repeated sourcing from wrapping KOReader methods more than once
-
-## [0.2.0-alpha] - 2026-08-05
-
-### Changed
-
-- Converted Burrow into a self-contained KOReader plugin
-- Added a phased, plugin-owned module loader
-
-## [0.1.9-alpha] - 2026-08-05
-
-### Fixed
-
-- Rebuilt the return-to-library tile with a fresh, uncached icon widget after leaving the reader
-- Prevented stale reader pixels from appearing through the return icon
-
-## [0.1.4-alpha] - 2026-08-05
-
-### Fixed
-
-- Restored access to the Store download queue
-- Excluded JPEG and other cover-image links from book download choices
-
-## [0.1.3-alpha] - 2026-08-04
-
-### Changed
-
-- Consolidated the library and Store under Burrow-owned names
-- Added one-time migration for compatible earlier settings and databases
-
-## [0.1.0-alpha] - 2026-08-04
-
-### Added
-
-- Initial unified Burrow library, Store, and reader-interface package
-
-[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.4.2...HEAD
-[0.4.2]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.4.2
-[0.4.2-beta.11]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.4.2-beta.11
-[0.4.2-beta.10]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.4.2-beta.10
-[0.4.2-beta.9]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.4.2-beta.9
-[0.4.1]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.4.1
-[0.4.0]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.4.0
-[0.3.8-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.8-beta
-[0.3.7-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.7-beta
-[0.3.6-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.6-beta
-[0.3.5-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.5-beta
-[0.3.4-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.4-beta
-[0.3.3-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.3-beta
-[0.3.2-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.2-beta
-[0.3.1-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.1-beta
-[0.3.0-beta]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.3.0-beta
-[0.2.2-alpha]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.2.2-alpha
-[0.2.1-alpha]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.2.1-alpha
-[0.2.0-alpha]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.2.0-alpha
+- Prevented Quick Settings swipes from activating action tiles when a swipe ends over a button‹HÙ\œ›ÛYÚ[™Ø\›]ÛY\ˆ˜YÙÚ[™È[˜İ[Û˜[Ú[HÛÛœİ[Z[™Èİ\ˆ]ZXÚÈÙ][™ÜÈİÚ\\Â‹HØÛÜYHÛYK\İ[HY[HYÙ\ˆ™\XÙ[Y[ÈX›HÙˆÛÛ[È[œİXYÙˆ[ÙYZ[™È]™\HÓÔ™XY\ˆY[B‹H™\İÜ™YHÛYH[™İÜ™H›Ûİ\ˆÚ[Hœ›İÜÚ[™ÈİÜ™HY\ˆH™]KŒLYÙ\ˆ™YÜ™\ÜÚ[Û‚‹H™]™[YH™]KŒLYÙ\ˆİ\İÛZ^˜][Ûˆœ›ÛH[\™™\š[™ÈÚ][œ™[]YÓÔ™XY\ˆY[\Â‚ˆÈÈÌŒ‹X™]KŒLHHŒ‹LLLÂ‚ˆÈÈÈÚ[™ÙY‚‹H™\XÙYH]ZXÚÈÙ][™ÜÈ™\İ\Û\Ú]HİÙ\‹\İ[HXÛÛˆÛÈ™\İ\\Èš\İX[H\İ[˜İœ›ÛH›İ]B‹H™\XÙYHÛ\ˆ\œ›İËX˜\ÙYYÙYYX[ÙÈ›Ûİ\œÈÚ]\œ›İÉÜÈÛYK\İ[HYÙH[™XØ]ÜˆHÛ™ÈXİ]™H[Ú]ÛX[[˜Xİ]™HİÂ‹HÙ[\™YHX›HÙˆÛÛ[ÈYÙH[™XØ]Üˆ]H›İÛHÙˆHØÜ™Y[ˆÈX]ÚHÛYHXœ˜\HYÙ\‚‚ˆÈÈÈš^Y‚‹H™\İÜ™Y›İ\‹]Ø^H]ZXÚÈÙ][™ÜÈ›İ][ÛˆÛÈ›İ]HŞXÛ\È›İYÚ[›İ\ˆ\ÚXØ[ØÜ™Y[ˆÜšY[][ÛœÂ‹H™\İÜ™Y›İ][Ûˆ\œÚ\İ[˜ÙH™]ÙY[ˆHXœ˜\H[™™XY\‚‹H\œÚ\İYHÙ[XİYÜšY[][ÛˆXÜ›ÜÜÈH[ÓÔ™XY\ˆ™\İ\HØ]š[™È[™^XÚ]H™\İÜš[™ÈHš[HX[˜YÙ\ˆ›İ][ÛˆÚ[H›İ][ÛˆØÚÚ[™È\È[˜X›Y‹H™\İÜ™YÜšYZ[š[][\ÈİÛˆÈÛ™H›İÈÜˆÛ™HÛÛ[[‹[İÚ[™È^[İ]ÈİXÚ\ÈK^Ë[™İ\ˆ™Xİ[™İ[\ˆÛÛXš[˜][ÛœÈÚ[H™]Z[š[™ÈHX^[][B‹H[\›İ™Y]]ÛX]XÈ\]HÚXÚÜÈÛÈ[˜X›[™È]]ÛX]XÈ\]HÚXÚÜÈØ[ˆ[[YYX][H[ˆHYHÚXÚÂ‹H[\›İ™Y]]ÛX]XÈ\]HÚXÚÜÈÚ[ˆÓÔ™XY\ˆİ\ÈÙ™›[™HHÚXÚÚ[™ÈYØZ[ˆY\ˆ™]ÛÜšÈÛÛ›™Xİ]š]H™XÛÛY\È]˜Z[X›B‹HÙ\]]ÛX]XÈ\]HÚXÚÜÈÛˆZ\ˆ™Xİ\œš[™ÈØÚY[HÚ[HÓÔ™XY\ˆ™[XZ[œÈÜ[‚‹HYY™]HØÚY[[™ÈY\ˆ˜Z[Y]]ÛX]XÈÚXÚÜÈÚ]İ][İÚ[™ÈÚXÚÜÈÈ[ˆ[Ü™Hœ™\]Y[H[ˆİ\›B‹H\]Y›ÛÚÈ[™›Ü›X][ÛˆYÚ[˜][ÛˆÈ\ÙHHÛYK\İ[HİÚ\KX[™YİÈ[\™˜XÙB‹H\]YX›HÙˆÛÛ[ÈYÚ[˜][ÛˆÈ\ÙHHÛYK\İ[HİÚ\KX[™YİÈ[\™˜XÙB‚ˆÈÈÌŒ‹X™]KWHHŒ‹LLLÂ‚ˆÈÈÈÚ[™ÙY‚‹H›Û[İYH\]\‹›İ][Û‹[™ÜšY™XÛİ™\HÛÜšÈÈH™\™[X\ÙHÚ[›™[›Üˆ]šXÙH\İ[™Â‚ˆÈÈÈš^Y‚‹H™\İÜ™Y›İ\‹]Ø^H]ZXÚÈÙ][™ÜÈ›İ][Û‚‹H™\İÜ™Y™[Y[X™\™Y›İ][Ûˆ™]ÙY[ˆš[HX[˜YÙ\ˆ[™™XY\‚‹H™\İÜ™YÛ™K\›İÈ[™Û™KXÛÛ[[ˆÜšYÛÛ™šYİ\˜][ÛœÂ‹H[\›İ™Y]]ÛX]XÈ\]KXÚXÚÈšYÙÙ\š[™È›ÜˆH™]H\]HÚ[›™[‚ˆÈÈÌŒWHHŒ‹LLL‚‚ˆÈÈÈÚ[™ÙY‚‹HÙ[\™YHÙÛË[Û›H\œ›İÈ˜YÙ\ˆ™\XØ[H[ˆHXY\ˆÜXÙHX›İ™HH\›ÈØ\™‹HYYH\œ›İË\ØÛÜYÛYHXÛÛˆÚ]ÜXØ[H›Ü›X[^™Yİ›ÚÙHÙZYÚÚ[HÙY\[™ÈHÜšYÚ[˜[ÛÛ˜\ˆXÛÛœÈ[™İXÚ]\™Ù]ÜXÚ[™Â‚ˆÈÈÈš^Y‚‹H™]™[Y]]ÛX]XË\Ù\šY\È[™\ÚXØ[Y›Û\ˆ›Ü™\œÈœ›ÛH\X\š[™È\ÈœšYÚİ][™\È[ˆÓÔ™XY\ˆšYÚ[ÙB‚ˆÈÈÌŒHHŒ‹LLL‚‚ˆÈÈÈYY‚‹HYYHÛX[™Y]B'W'&÷r6WGF–æw27G'V7GW&R÷&væ—¦VB&÷VæBÆ–'&'’Âæf–vF–öâÂV–6²6WGF–æw2Â7F÷&RÂGfæ6VBÂæB&÷W@¢ÒFFVB–æFWVæFVçB6öçG&öÇ2f÷"&öö²Â‡—6–6ÂÖföÆFW"ÂæB6W&–W2F—FÆW2VæFW"6÷fW'0¢ÒFFVB&WGW&âFòÆ–'&'’F—7Æ’÷F–öâ–æFWVæFVçBöbWFöÖF–26W&–W2w&÷W–æp ¢2226†ævV@ ¢Ò&öÖ÷FVB'W'&÷r÷WBöb&WF2F†Rf—'7B7F&ÆR&VÆV6P¢ÒÖ÷fVBWFöÖF–26W&–W2w&÷W–ær÷WBöb´õ&VFW"w27Fö6²f–ÆR'&÷w6W"6WGF–æw2æB–çFò'W'&÷r6WGF–æw0¢Ò6öç6öÆ–FFVBV–6²6WGF–æw26öæf–wW&F–öâVæFW"'W'&÷r6WGF–æw0¢ÒVæ–f–VB&öö²Â‡—6–6ÂÖföÆFW"ÂæBf—'GVÂ×6W&–W26÷fW"vVöÖWG'’6òÆÂF‡&VRW6RF†R6ÖR6—¦–æröÆ–7¢Ò¶WB6÷fW"6—¦RæB76–ær6öçG&öÇ2f–Æ&ÆRg&öÒF†R6ÆVæVB×WÆ–'&'’6WGF–æw0¢Ò&V÷&FW&VBF†R6÷fW"&VæFW&–ærÖöGVÆW26ò&÷VæFVB&öö²vVöÖWG'’—2W7F&Æ—6†VB&Vf÷&RWFöÖF–26W&–W2&ö6W76–æræBf–æÂ66Æ–æp ¢222f—†V@ ¢Ò¶WB&WGW&âFòÆ–'&'’f–Æ&ÆRf÷"ÖçVÆÇ’÷&væ—¦VBföÆFW'2v†VâWFöÖF–26W&–W2w&÷W–ær—2F—6&ÆV@¢Ò&WfVçFVBF—FÆW2g&öÒ–çFW'6V7F–ærVæÆ&vVB6÷fW'0¢Ò&WfVçFVB‡—6–6ÂÖföÆFW"&VæFW&–ærg&öÒF—66&F–ærF†R6öæf–wW&VB6÷fW"6—¦P¢Ò6÷'&V7FVB&V'V–ÇB6÷fW"F–ÆW26òF†R6öæf–wW&VB6—¦R—2&VÆ–VBgFW"&VFW"&WGW&ç2æB'&÷w6W"&Vg&W6†W0¢Ò&WÆ6VB†WW&—7F–2‡—6–6ÂÖföÆFW"6÷fW"F—66÷fW'’v—F‚W‡Æ–6—B6÷fW"&VfW&Væ6W2–âF†Rf–æÂÆ–÷WB70 ¢22³ã2ã‚Ö&WFÒÒ##bÓ‚Ó` ¢2226†ævV@ ¢ÒVæ–f–VBF†R†öÖRæB7F÷&Rfö÷FW"F–ÖVç6–öç26òF†Ræf–vF–öâ&VÖ–ç2F†R6ÖR6—¦Rv†Vâ7v—F6†–ær67&VVç0¢ÒÖFRF†R7F÷&R&W7V7BF†R6öæf–wW&VB†öÖRæB7F÷&RÆ&VÂ×6—¦R6WGF–æp¢Ò7FæF&F—¦VBF†R7F—fR×F"VæFW&Æ–æRv–GF‚7&÷72†öÖRæB7F÷&P ¢22³ã2ãrÖ&WFÒÒ##bÓ‚ÓP ¢2226†ævV@ ¢Ò–×&÷fVB7F÷&R6÷fW"ÆöF–æræB6†÷'B×FW&Ò6FÆör66†–æp¢Ò&VGV6VBVææV6W76'’6÷fW"Ö66†R'Væ–æræBæWGv÷&²&WVW7G0¢Ò&Vf–æVBF†R†öÖRæB7F÷&Rfö÷FW"76–æræB7F—fRVæFW&Æ–æP ¢222f—†V@ ¢Ò†–BF†R&WGW&â'&÷rv†–ÆRF†R'W'&÷r†öÖRæB7F÷&Rfö÷FW"—27F—fP¢Ò†–BvR–æF–6F÷'2öâ6–ævÆR×vR7F÷&RÖVçW0¢Ò–æ7&V6VB76–ær&WGvVVâF†R'W'&÷r–6öâæBF†Rf—'7B&÷röb7F÷&R6÷fW'0¢Ò&W—&VBæB6ö×7FVBF†R7F÷&RF÷væÆöBVWVRB7F'GW ¢Ò&WfVçFVBGWÆ–6FRVWVVBF÷væÆöG2æB&VÖ÷fVB6ö×ÆWFVBF—&V7BF÷væÆöG2g&öÒF†RVWVP¢ÒW'6—7FVB6ÆV&VBF÷væÆöBVWVW2–ÖÖVF–FVÇ ¢22³ã2ãbÖ&WFÒÒ##bÓ‚ÓP ¢222FFV@ ¢ÒW‡FVæFVBF†R†öÖRæB7F÷&Rfö÷FW"FòæW7FVBÖçVÂföÆFW'2–ç6–FRF†R6öæf–wW&VBÆ–'&' ¢2226†ævV@ ¢Ò&öÖ÷FVBF†RFWf–6R×FW7FVBã2ãb'V–ÆBFòV&Æ–2&WF ¢222f—†V@ ¢Òæ6†÷&VBF†RföÆFW"æB6öÆÆV7F–öâÖ&¶W"FòF†RWW"ÖÆVgB6÷&æW"öbF†R6÷fW ¢ÒÆ–VB&VÂ&÷VæFVBÖ6÷&æW"Ö6¶–ærFòÖçVÂÖföÆFW"'Gv÷&²–â6÷fW"w&–BæB6÷fW"Æ—7@ ¢22³ã2ãRÖ&WFÒÒ##bÓ‚ÓP ¢222FFV@ ¢ÒFFVBF†R7F6¶VBÖ&öö·26W&–W2Ö&¶W"Fò‡—6–6ÂföÆFW'2æB6öÆÆV7F–öâ×7G–ÆRF—&V7F÷'’F–ÆW2–â6÷fW"w&–@¢ÒFFVBF†R'W'&÷r&WGW&âFòÆ–'&'’–6öâFòF†R6÷'&W7öæF–ær6÷fW"Æ—7B&÷p ¢22³ã2ãBÖ&WFÒÒ##bÓ‚ÓP ¢222f—†V@ ¢Ò7F÷VBF†R‡—6–6ÂÖföÆFW"6öç6—7FVæ7’Æ–W"g&öÒ&V'V–ÆF–ærWFöÖF–2×6W&–W2F–ÆW0¢Ò&VÖ÷fVBGWÆ–6FVBWFöÖF–2×6W&–W26÷fW'2æBF÷V&ÆVB6W&–W26F–öç0¢Ò&VGV6VB‡—6–6ÂÖföÆFW"6÷fW'2FòF†R6ÖR6F–öâ×&W6W'fVB†V–v‡BW6VB'’æ÷&ÖÂ&öö²6÷fW'0¢Ò¶WBWFöÖF–2×6W&–W26÷fW"w&–B&VæFW&–æröâ—G2æF—fR'W'&÷rF‚v†–ÆR&WF–æ–ær&÷VæFVBgVÆÂ×6—¦RföÆFW"'Gv÷&²–â6÷fW"Æ—7@ ¢22³ã2ã2Ö&WFÒÒ##bÓ‚ÓP ¢222f—†V@ ¢Ò&WfVçFVBÆVv7’&ö¦V7EF—FÆRæBvVæW&FVBföÆFW"Ö6÷fW"66†RF‡2g&öÒ&V–ærG&VFVB27W7FöÒföÆFW"–ÖvW0¢Ò‡—6–6ÂföÆFW'2æ÷rW6RöæÇ’&VÂföÆFW"ÖÆö6Â6÷fW"–ÖvR÷"F†Rf—'7Bf–Æ&ÆR&öö²6÷fW ¢ÒV&Æ—6†VBF†RföÆFW"f—‚VæFW"æWrfW'6–öâ6òW6W'2Fòæ÷B&V6V—fR66†VBã2ã"6¶vP ¢22³ã2ã"Ö&WFÒÒ##bÓ‚ÓP ¢222FFV@ ¢ÒFFVB'W'&÷r6WGF–ærFò6†÷r÷"†–FRçVÖ&W&VB6W&–W2&FvW2öâ&öö²6÷fW'0 ¢2226†ævV@ ¢ÒÖFR‡—6–6ÂföÆFW'2æBWFöÖF–2×6W&–W2föÆFW'2W6RF†R6ÖR6÷fW"&W6VçFF–öà¢Ò‡—6–6ÂföÆFW'2æ÷rW6R7W7FöÒföÆFW"6÷fW"v†Vâf–Æ&ÆRÂ÷F†W'v—6RF†Rf—'7Bf–Æ&ÆR&öö²6÷fW ¢Ò&VÖ÷fVBF†R×VÇF’Ö6÷fW"Ö÷6–2fÆÆ&6²g&öÒföÆFW"F–ÆW0 ¢222f—†V@ ¢Ò&Wv÷&¶VB6÷fW"Æ—7BföÆFW"7G–Æ–ær6ògVÆÂ×6—¦R&÷VæFVB6÷fW'2&RÆ–VBGW&–ærWfW'’&÷r'V–Æ@¢Ò&WfVçFVBföÆFW"ÖæÖR÷fW&Æ—2æB—FVÒÖ6÷VçB6—&6ÆW2g&öÒ&V–ær&VG&vâ÷fW"Væ–f–VB6÷fW"w&–BF–ÆW0 ¢22³ã2ãÖ&WFÒÒ##bÓ‚ÓP ¢222f—†V@ ¢ÒÖFRföÆFW"æBWFöÖF–2×6W&–W2'Gv÷&²W6RF†RgVÆÂf–Æ&ÆR6÷fW"6—¦R–â6÷fW"Æ—7@¢ÒÆ–VBF†R6ÖR&÷VæFVBg&ÖRFòföÆFW"æB6W&–W2'Gv÷&²W6VBf÷"&öö²6÷fW'2–â6÷fW"Æ—7@ ¢22³ã2ãÖ&WFÒÒ##bÓ‚ÓP ¢222FFV@ ¢ÒV&Æ–2&WFFö7VÖVçFF–öâæBFWf–6R67&VVç6†÷G0¢Ò&WFæ÷FW26÷fW&–ær7W'&VçB6ö×F–&–Æ—G’æBFW7F–ærÆ–Ö—G0 ¢2226†ævV@ ¢Ò&öÖ÷FVB'W'&÷rg&öÒÇ†FòV&Æ–2&WF¢ÒWFFVBF†RÆ7B×FW7FVB´õ&VFW"fW'6–öâFò##bãrã  ¢222f—†V@ ¢Ò6—FÆ—¦VBF†R&VF–ær6öçG&öÇ2æBV–6²6WGF–æw2æVÂF—FÆW0 ¢22³ã"ã"ÖÇ†ÒÒ##bÓ‚ÓP ¢222f—†V@ ¢ÒÖFR6÷fW"×6—¦RfÇVW2&÷fRR&VæFW"BF†R&WVW7FVB66ÆR–ç7FVBöb&V–ær6VB'’F†R÷&–v–æÂF–ÆRF–ÖVç6–öç0¢Ò6÷'&V7FVBF†R6—FÆ—¦F–öâöbF†R&VF–ær6öçG&öÇ2†VF–æp ¢22³ã"ãÖÇ†ÒÒ##bÓ‚ÓP ¢222FFV@ ¢ÒfÆW†–&ÆR´õ&VFW"6ö×F–&–Æ—G’öÆ–7’v—F‚Ö–æ–×VÒæBÆ7B×FW7FVBfW'6–öç0¢ÒFWVæFVæ7’Öv&RFVw&FVBÖöFRf÷"÷F–öæÂfVGW&Rw&÷W0¢ÒÖöGVÆR7FGW2&W÷'F–æræBV&çF–æVBÖfVGW&R&WG'’6öçG&öÇ0¢ÒwV&FVB'W'&÷uöÆ–'&'’æÇV6÷&R'VçF–ÖP ¢2226†ævV@ ¢Ò&VÖ÷fVBF†RW†7B´õ&VFW"fW'6–öâÆö6°¢Ò&VGV6VBÖ–âæÇVFò&W&WV—6—FR6†V6·2ÂÆöFW"6WGWÂæBÇVv–âÖ6Æ727&VF–öà¢ÒÖ÷fVBF†R6÷&RÆ–'&'’'VçF–ÖR–çFòwV&FVBÖöGVÆP ¢222f—†V@ ¢Ò&WfVçFVBöæR÷F–öæÂÖöGVÆRf–ÇW&Rg&öÒF—6&Æ–ærVç&VÆFVB'W'&÷rfVGW&W0¢Ò&WfVçFVB&WVFVB6÷W&6–ærg&öÒw&–ær´õ&VFW"ÖWF†öG2Ö÷&RF†âöæ6P ¢22³ã"ãÖÇ†ÒÒ##bÓ‚ÓP ¢2226†ævV@ ¢Ò6öçfW'FVB'W'&÷r–çFò6VÆbÖ6öçF–æVB´õ&VFW"ÇVv–à¢ÒFFVB†6VBÂÇVv–âÖ÷væVBÖöGVÆRÆöFW  ¢22³ãã’ÖÇ†ÒÒ##bÓ‚ÓP ¢222f—†V@ ¢Ò&V'V–ÇBF†R&WGW&â×FòÖÆ–'&'’F–ÆRv—F‚g&W6‚ÂVæ66†VB–6öâv–FvWBgFW"ÆVf–ærF†R&VFW ¢Ò&WfVçFVB7FÆR&VFW"—†VÇ2g&öÒV&–ærF‡&÷Vv‚F†R&WGW&â–6öà ¢22³ããBÖÇ†ÒÒ##bÓ‚ÓP ¢222f—†V@ ¢Ò&W7F÷&VB66W72FòF†R7F÷&RF÷væÆöBVWVP¢ÒW†6ÇVFVB¥TræB÷F†W"6÷fW"Ö–ÖvRÆ–æ·2g&öÒ&öö²F÷væÆöB6†ö–6W0 ¢22³ãã2ÖÇ†ÒÒ##bÓ‚Ó@ ¢2226†ævV@ ¢Ò6öç6öÆ–FFVBF†RÆ–'&'’æB7F÷&RVæFW"'W'&÷rÖ÷væVBæÖW0¢ÒFFVBöæR×F–ÖRÖ–w&F–öâf÷"6ö×F–&ÆRV&Æ–W"6WGF–æw2æBFF&6W0 ¢22³ããÖÇ†ÒÒ##bÓ‚Ó@ ¢222FFV@ ¢Ò–æ—F–ÂVæ–f–VB'W'&÷rÆ–'&'’Â7F÷&RÂæB&VFW"Ö–çFW&f6R6¶vP ¥µVç&VÆV6VEÓ¢‡GG3¢òöv—F‡V"æ6öÒ÷&–6†&VGG’ö'W'&÷ræ¶÷ÇVv–âö6ö×&R÷cãBã2Ö&WFã"ââä„T@¥³ãBã2Ö&WFã%Ó¢‡GG3¢òöv—F‡V"æ6öÒ÷&–6†&VGG’ö'W'&÷ræ¶÷ÇVv–â÷&VÆV6W2÷Fr÷cãBã2Ö&WFã ¥³ãBã2Ö&WFãÓ¢‡GG3¢òöv—F‡V"æ6öÒ÷&–6†&VGG’ö'W'&÷ræ¶÷ÇVv–â÷&VÆV6W2÷Fr÷cãBã2Ö&WFã¥³ãBã%Ó¢‡GG3¢òöv—F‡V"æ6öÒ÷&–6†&VGG’ö'W'&÷ræ¶÷ÇVv–â÷&VÆV6W2÷Fr÷cãBã ¥³ãBã"Ö&WFãÓ¢‡GG3¢òöv—F‡V"æ6öÒ÷&–6†&VGG’ö'W'&÷ræ¶÷ÇVv–â÷&VÆV6W2÷Fr÷cãBã"Ö&WFã¥³ãBã"Ö&WFãÓ¢‡GG3¢òöv—F‡V"æ6öÒ÷&–6†&VGG’ö'W'&÷ræ¶÷ÇVv–â÷&VÆV6W2÷Fr÷cãBã"Ö&WFã ¥³ãBã"Ö&WFã•Ó¢‡GG3¢òöv—F‡V"æ6öÒ÷&–6†&VGG’ö'W'&÷ræ¶÷ÇVv–â÷&VÆV6W2÷Fr÷cãBã"Ö&WFã¥³ãBãÓ¢‡GG3¢òöv—F‡V"æ6öÒ÷&–6†&VGG’ö'W'&÷ræ¶÷ÇVv–â÷&VÆV6W2÷Fr÷cãBã¥³ãBãÓ¢‡GG3¢òöv—F‡V"æ6öÒ÷&–6†&VGG’ö'W'&÷ræ¶÷ÇVv–â÷&VÆV6W2÷Fr÷cãBã ¥³ã2ã‚Ö&WFÓ¢‡GG3¢òöv—F‡V"æ6öÒ÷&–6†&VGG’ö'W'&÷ræ¶÷ÇVv–â÷&VÆV6W2÷Fr÷cã2ã‚Ö&WF¥³ã2ãrÖ&WFÓ¢‡GG3¢òöv—F‡V"æ6öÒ÷&–6†&VGG’ö'W'&÷ræ¶÷ÇVv–â÷&VÆV6W2÷Fr÷cã2ãrÖ&WF¥³ã2ãbÖ&WFÓ¢‡GG3¢òöv—F‡V"æ6öÒ÷&–6†&VGG’ö'W'&÷ræ¶÷ÇVv–â÷&VÆV6W2÷Fr÷cã2ãbÖ&WF¥³ã2ãRÖ&WFÓ¢‡GG3¢òöv—F‡V"æ6öÒ÷&–6†&VGG’ö'W'&÷ræ¶÷ÇVv–â÷&VÆV6W2÷Fr÷cã2ãRÖ&WF¥³ã2ãBÖ&WFÓ¢‡GG3¢òöv—F‡V"æ6öÒ÷&–6†&VGG’ö'W'&÷ræ¶÷ÇVv–â÷&VÆV6W2÷Fr÷cã2ãBÖ&WF¥³ã2ã2Ö&WFÓ¢‡GG3¢òöv—F‡V"æ6öÒ÷&–6†&VGG’ö'W'&÷ræ¶÷ÇVv–â÷&VÆV6W2÷Fr÷cã2ã2Ö&WF¥³ã2ã"Ö&WFÓ¢‡GG3¢òöv—F‡V"æ6öÒ÷&–6†&VGG’ö'W'&÷ræ¶÷ÇVv–â÷&VÆV6W2÷Fr÷cã2ã"Ö&WF¥³ã2ãÖ&WFÓ¢‡GG3¢òöv—F‡V"æ6öÒ÷&–6†&VGG’ö'W'&÷ræ¶÷ÇVv–â÷&VÆV6W2÷Fr÷cã2ãÖ&WF¥³ã2ãÖ&WFÓ¢‡GG3¢òöv—F‡V"æ6öÒ÷&–6†&VGG’ö'W'&÷ræ¶÷ÇVv–â÷&VÆV6W2÷Fr÷cã2ãÖ&WF¥³ã"ã"ÖÇ†Ó¢‡GG3¢òöv—F‡V"æ6öÒ÷&–6†&VGG’ö'W'&÷ræ¶÷ÇVv–â÷&VÆV6W2÷Fr÷cã"ã"ÖÇ†¥³ã"ãÖÇ†Ó¢‡GG3¢òöv—F‡V"æ6öÒ÷&–6†&VGG’ö'W'&÷ræ¶÷ÇVv–â÷&VÆV6W2÷Fr÷cã"ãÖÇ†¥³ã"ãÖÇ†Ó¢‡GG3¢òöv—F‡V"æ6öÒ÷&–6†&VGG’ö'W'&÷ræ¶÷ÇVv–â÷&VÆV6W2÷Fr÷cã"ãÖÇ† 
