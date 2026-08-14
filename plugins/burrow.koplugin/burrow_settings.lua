@@ -176,6 +176,11 @@ function BurrowSettings:getModuleManifest()
             filename = "2-quick-settings.lua",
             feature = "quick_settings",
         })
+        add("quick_settings_native_night", "2-quick-settings-native-night.lua", "early", {
+            filename = "2-quick-settings-native-night.lua",
+            feature = "quick_settings",
+            depends = { "quick_settings" },
+        })
     end
     if self:isFeatureEnabled("statusbar") then
         add("statusbar", "2-statusbar-margins-presets.lua", "early", {
@@ -202,6 +207,11 @@ function BurrowSettings:getModuleManifest()
         filename = "2-zz-burrow-settings-menu.lua",
         feature = "settings_menu",
         depends = { "library_core" },
+    })
+    add("soft_palette_settings", "2-zzzz-soft-palette-settings.lua", "instance", {
+        filename = "2-zzzz-soft-palette-settings.lua",
+        feature = "settings_menu",
+        depends = { "library_core", "settings_menu_cleanup" },
     })
 
     return modules
