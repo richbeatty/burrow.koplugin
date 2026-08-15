@@ -20,13 +20,21 @@ s = replace_once(
     '',
     'remove soft ornament setting',
 )
-start_marker = '    local function isEpub(path)\n'
-end_marker = '    -- Optional Kindle-like treatment for small monochrome EPUB artwork.\n'
-assert s.count(start_marker) == 1 and s.count(end_marker) == 1
-start = s.index(start_marker)
-end = s.index(end_marker, start)
-s = s[:start] + s[end:]
-start_marker = '    -- Optional Kindle-like treatment for small monochrome EPUB artwork.\n'
+s = replace_once(
+    s,
+    '    local function isEpub(path)\n        return type(path) == "string" and path:lower():match("%.epub$") ~= nil\n    end\n\n',
+    '',
+    'remove EPUB helper',
+)
+ornament_comment = """    -- Optional Kindle-like treatment for small monochrome EPUB artwork. Rather
+    -- than recoloring CRengine's final framebuffer, build a cached shadow EPUB
+    -- where only conservative ornament candidates have #000/#FFF mapped to the
+    -- same #202020/#F2F2F0 palette as the page. Large and colored images remain
+    -- byte-for-byte original. The reader-context marker prevents file-browser
+    -- cover and metadata probes from ever being redirected through this cache.
+"""
+s = replace_once(s, ornament_comment, '', 'remove old ornament comment')
+start_marker = '    if not CreDocument._burrow_soft_palette_ornament_loader_v1 then\n'
 end_marker = '    if not CreDocument._burrow_soft_palette_v5 then\n'
 assert s.count(start_marker) == 1 and s.count(end_marker) == 1
 start = s.index(start_marker)
