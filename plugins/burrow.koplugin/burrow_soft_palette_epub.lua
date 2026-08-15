@@ -7,11 +7,27 @@ local logger = require("logger")
 local util = require("util")
 
 local Epub = {
-    CACHE_VERSION = "ornaments-v1-f2f2f0-202020",
+    CACHE_VERSION = "ornaments-v2-selective-night",
 }
 
-local BLACK_R, BLACK_G, BLACK_B = 0x20, 0x20, 0x20
-local WHITE_R, WHITE_G, WHITE_B = 0xF2, 0xF2, 0xF0
+local PALETTES = {
+    ["pure-light"] = {
+        dark = { 0x00, 0x00, 0x00 },
+        light = { 0xFF, 0xFF, 0xFF },
+    },
+    ["pure-night"] = {
+        dark = { 0xFF, 0xFF, 0xFF },
+        light = { 0x00, 0x00, 0x00 },
+    },
+    ["soft-light"] = {
+        dark = { 0x20, 0x20, 0x20 },
+        light = { 0xF2, 0xF2, 0xF0 },
+    },
+    ["soft-night"] = {
+        dark = { 0xDF, 0xDF, 0xDF },
+        light = { 0x0D, 0x0D, 0x0F },
+    },
+}
 
 -- Keep this deliberately conservative. The goal is to catch scene-break art,
 -- chapter flourishes and other small monochrome assets without recoloring
@@ -100,6 +116,10 @@ local function ensureDir(path)
     return ok or lfs.attributes(path, "mode") == "directory"
 end
 
+local function paletteFor(name)
+    return PALETTES[name]
+end
+
 function Epub.cacheDirectory()
     local root
     if type(DataStorage.getFullDataDir) == "function" then
@@ -109,7 +129,11 @@ function Epub.cacheDirectory()
     return root .. "/cache/burrow-soft-palette"
 end
 
-function Epub.cachePath(source)
+function Epub.cachePath(source, paletteName)
+    if not paletteFor(paletteName) then
+        return nil, "Unknown decorative EPUB palette: " .. tostring(paletteName)
+    end
+
     local checksum = util.partialMD5(source)
     if not checksum then return nil, "Could not identify this EPUB." end
 
@@ -119,9 +143,31 @@ function Epub.cachePath(source)
         tostring(attrs.size or ""),
         tostring(attrs.modification or ""),
         Epub.CACHE_VERSION,
+        paletteName,
     }, "-")
     identity = identity:gsub("[^%w%-_%.]", "_")
     return Epub.cacheDirectory() .. "/" .. identity .. ".epub"
+end
+
+local function countPath(targetPath)
+    return targetPath .. ".count"
+end
+
+local function readRecoloredCount(path)
+    local file = io.open(path, "r")
+    if not file then return nil end
+    local value = tonumber(file:read("*l"))
+    file:close()
+    if not value or value < 0 then return nil end
+    return math.floor(value)
+end
+
+local function writeRecoloredCount(path, count)
+    local file = io.open(path, "w")
+    if not file then return false end
+    file:write(tostring(count), "\n")
+    file:close()
+    return true
 end
 
 local function visibleChannel(channel, alpha)
@@ -179,11 +225,12 @@ local function isSmallMonochromeRaster(bb)
     return true
 end
 
-local function remapChannel(luma, target_white)
-    return math.floor(BLACK_R + (luma * (target_white - BLACK_R) + 127) / 255)
+local function remapChannel(luma, darkTarget, lightTarget)
+    local value = darkTarget + luma * (lightTarget - darkTarget) / 255
+    return math.floor(value + 0.5)
 end
 
-local function recolorRaster(content, media, tempBase)
+local function recolorRaster(content, media, tempBase, palette)
     if #content > MAX_COMPRESSED_BYTES then return nil end
 
     local ok, bb = pcall(
@@ -207,9 +254,9 @@ local function recolorRaster(content, media, tempBase)
         for x = 0, w - 1 do
             local r, g, b = visibleRGB(bb, x, y)
             local luma = luminance(r, g, b)
-            local rr = remapChannel(luma, WHITE_R)
-            local gg = remapChannel(luma, WHITE_G)
-            local bbv = remapChannel(luma, WHITE_B)
+            local rr = remapChannel(luma, palette.dark[1], palette.light[1])
+            local gg = remapChannel(luma, palette.dark[2], palette.light[2])
+            local bbv = remapChannel(luma, palette.dark[3], palette.light[3])
             out:setPixel(x, y, ColorRGB24(rr, gg, bbv))
         end
     end
@@ -230,7 +277,7 @@ local function recolorRaster(content, media, tempBase)
 
     if not write_ok then
         os.remove(tempPath)
-        logger.warn("[Burrow palette] Could not encode recolored ornament", write_err)
+        logger.warn("[Burrow ornaments] Could not encode adjusted ornament", write_err)
         return nil
     end
 
@@ -245,14 +292,18 @@ local function recolorRaster(content, media, tempBase)
     return transformed
 end
 
-local function remapGrayValue(value)
-    local r = remapChannel(value, WHITE_R)
-    local g = remapChannel(value, WHITE_G)
-    local b = remapChannel(value, WHITE_B)
+local function remapGrayValue(value, palette)
+    local r = remapChannel(value, palette.dark[1], palette.light[1])
+    local g = remapChannel(value, palette.dark[2], palette.light[2])
+    local b = remapChannel(value, palette.dark[3], palette.light[3])
     return string.format("#%02x%02x%02x", r, g, b)
 end
 
-local function recolorSvg(content)
+local function paletteEndpoint(rgb)
+    return string.format("#%02x%02x%02x", rgb[1], rgb[2], rgb[3])
+end
+
+local function recolorSvg(content, palette)
     if #content > 100000 then return nil end
     local lower = content:lower()
     if lower:find("<image", 1, true)
@@ -290,7 +341,7 @@ local function recolorSvg(content)
         if value then
             if value <= 96 then saw_dark = true end
             changed = true
-            return remapGrayValue(value)
+            return remapGrayValue(value, palette)
         end
         return "#" .. hex
     end)
@@ -300,9 +351,9 @@ local function recolorSvg(content)
         if r and g and b and r == g and g == b and r >= 0 and r <= 255 then
             if r <= 96 then saw_dark = true end
             changed = true
-            local rr = remapChannel(r, WHITE_R)
-            local gg = remapChannel(r, WHITE_G)
-            local bbv = remapChannel(r, WHITE_B)
+            local rr = remapChannel(r, palette.dark[1], palette.light[1])
+            local gg = remapChannel(r, palette.dark[2], palette.light[2])
+            local bbv = remapChannel(r, palette.dark[3], palette.light[3])
             return string.format("rgb(%d,%d,%d)", rr, gg, bbv)
         end
         return prefix .. tostring(r) .. comma1 .. tostring(g) .. comma2 .. tostring(b) .. suffix
@@ -311,25 +362,30 @@ local function recolorSvg(content)
     transformed = transformed:gsub("([" .. "'=:%s" .. "])black([;\"'%s>/])", function(pre, post)
         changed = true
         saw_dark = true
-        return pre .. "#202020" .. post
+        return pre .. paletteEndpoint(palette.dark) .. post
     end)
     transformed = transformed:gsub("([" .. "'=:%s" .. "])white([;\"'%s>/])", function(pre, post)
         changed = true
-        return pre .. "#f2f2f0" .. post
+        return pre .. paletteEndpoint(palette.light) .. post
     end)
 
     if changed and saw_dark then return transformed end
     return nil
 end
 
-local function transformImage(content, media, tempBase)
+local function transformImage(content, media, tempBase, palette)
     if media == "image/svg+xml" then
-        return recolorSvg(content)
+        return recolorSvg(content, palette)
     end
-    return recolorRaster(content, media, tempBase)
+    return recolorRaster(content, media, tempBase, palette)
 end
 
-function Epub.generate(sourcePath, targetPath)
+function Epub.generate(sourcePath, targetPath, paletteName)
+    local palette = paletteFor(paletteName)
+    if not palette then
+        return false, "Unknown decorative EPUB palette: " .. tostring(paletteName)
+    end
+
     local reader = Archiver.Reader:new()
     if not reader:open(sourcePath) then
         return false, "Could not open source EPUB."
@@ -362,7 +418,7 @@ function Epub.generate(sourcePath, targetPath)
     local writer = Archiver.Writer:new()
     if not writer:open(tempPath, "epub") then
         closeQuietly(reader)
-        return false, "Could not create soft-palette EPUB cache."
+        return false, "Could not create decorative EPUB cache."
     end
 
     local mtime = os.time()
@@ -388,13 +444,19 @@ function Epub.generate(sourcePath, targetPath)
 
             local media = imageSet[normalizePath(entry.path)]
             if media then
-                local ok, transformed = pcall(transformImage, content, media, tempImageBase)
+                local ok, transformed = pcall(
+                    transformImage,
+                    content,
+                    media,
+                    tempImageBase,
+                    palette
+                )
                 if ok and transformed then
                     content = transformed
                     recolored = recolored + 1
-                    logger.dbg("[Burrow palette] Recolored decorative EPUB image", entry.path)
+                    logger.dbg("[Burrow ornaments] Adjusted decorative EPUB image", entry.path)
                 elseif not ok then
-                    logger.warn("[Burrow palette] Ornament transform failed", entry.path, transformed)
+                    logger.warn("[Burrow ornaments] Ornament transform failed", entry.path, transformed)
                 end
             end
 
@@ -412,33 +474,62 @@ function Epub.generate(sourcePath, targetPath)
     os.remove(tempImageBase .. ".png")
     os.remove(tempImageBase .. ".jpg")
 
+    if recolored == 0 then
+        os.remove(tempPath)
+        logger.dbg("[Burrow ornaments] No eligible decorative EPUB images found")
+        return true, 0
+    end
+
     os.remove(targetPath)
     local ok, err = os.rename(tempPath, targetPath)
     if not ok then
         os.remove(tempPath)
-        return false, "Could not finalize soft-palette EPUB cache: " .. tostring(err)
+        return false, "Could not finalize decorative EPUB cache: " .. tostring(err)
     end
 
-    logger.info("[Burrow palette] Built EPUB ornament cache", recolored)
-    return true
+    logger.info("[Burrow ornaments] Built EPUB ornament cache", paletteName, recolored)
+    return true, recolored
 end
 
-function Epub.ensureCache(sourcePath)
+function Epub.ensureCache(sourcePath, paletteName)
     local directory = Epub.cacheDirectory()
     if not ensureDir(directory) then
-        return nil, "Could not create Burrow's soft-palette cache."
+        return nil, "Could not create Burrow's decorative EPUB cache.", nil
     end
 
-    local target, err = Epub.cachePath(sourcePath)
-    if not target then return nil, err end
-    if lfs.attributes(target, "mode") == "file" then return target end
+    local target, err = Epub.cachePath(sourcePath, paletteName)
+    if not target then return nil, err, nil end
 
-    local ok, buildErr = Epub.generate(sourcePath, target)
+    local countFile = countPath(target)
+    local recolored = readRecoloredCount(countFile)
+    if recolored ~= nil then
+        if recolored == 0 then
+            return nil, nil, 0
+        end
+        if lfs.attributes(target, "mode") == "file" then
+            return target, nil, recolored
+        end
+        os.remove(countFile)
+    elseif lfs.attributes(target, "mode") == "file" then
+        -- A completed v2 cache always has a count marker. If it is missing,
+        -- rebuild rather than trusting a potentially interrupted cache write.
+        os.remove(target)
+    end
+
+    local ok, result = Epub.generate(sourcePath, target, paletteName)
     if not ok then
         os.remove(target)
-        return nil, buildErr
+        os.remove(countFile)
+        return nil, result, nil
     end
-    return target
+
+    recolored = tonumber(result) or 0
+    writeRecoloredCount(countFile, recolored)
+    if recolored == 0 then
+        os.remove(target)
+        return nil, nil, 0
+    end
+    return target, nil, recolored
 end
 
 return Epub
