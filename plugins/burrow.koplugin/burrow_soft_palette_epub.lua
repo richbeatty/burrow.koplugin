@@ -7,7 +7,7 @@ local logger = require("logger")
 local util = require("util")
 
 local Epub = {
-    CACHE_VERSION = "ornaments-v2-selective-night",
+    CACHE_VERSION = "ornaments-v3-single-source",
 }
 
 local PALETTES = {
@@ -15,17 +15,9 @@ local PALETTES = {
         dark = { 0x00, 0x00, 0x00 },
         light = { 0xFF, 0xFF, 0xFF },
     },
-    ["pure-night"] = {
-        dark = { 0xFF, 0xFF, 0xFF },
-        light = { 0x00, 0x00, 0x00 },
-    },
     ["soft-light"] = {
         dark = { 0x20, 0x20, 0x20 },
         light = { 0xF2, 0xF2, 0xF0 },
-    },
-    ["soft-night"] = {
-        dark = { 0xDF, 0xDF, 0xDF },
-        light = { 0x0D, 0x0D, 0x0F },
     },
 }
 
@@ -72,7 +64,13 @@ local function attr(tag, name)
         or tag:match(name .. "%s*=%s*'([^']*)'")
 end
 
-local function imageDocuments(opf, opfPath)
+local SUPPORTED_IMAGE_MEDIA = {
+    ["image/png"] = true,
+    ["image/jpeg"] = true,
+    ["image/svg+xml"] = true,
+}
+
+local function imageAssets(opf, opfPath)
     local result = {}
     local base = dirname(opfPath)
 
@@ -87,20 +85,28 @@ local function imageDocuments(opf, opfPath)
         local media = attr(tag, "media%-type")
         local href = attr(tag, "href")
         local properties = attr(tag, "properties") or ""
-        if href and media then
-            local supported = media == "image/png"
-                or media == "image/jpeg"
-                or media == "image/svg+xml"
-            if supported then
-                href = href:gsub("#.*$", "")
-                local path = normalizePath(base .. href)
-                local is_cover = properties:find("cover%-image") ~= nil
-                    or (epub2_cover_id and id == epub2_cover_id)
-                    or path:lower():find("cover", 1, true) ~= nil
-                if not is_cover then
-                    result[path] = media
-                end
+        if href and media and media:match("^image/") then
+            href = href:gsub("#.*$", "")
+            local path = normalizePath(base .. href)
+            local is_cover = properties:find("cover%-image") ~= nil
+                or (epub2_cover_id and id == epub2_cover_id)
+                or path:lower():find("cover", 1, true) ~= nil
+            if not is_cover then
+                result[path] = {
+                    media = media,
+                    supported = SUPPORTED_IMAGE_MEDIA[media] == true,
+                }
             end
+        end
+    end
+    return result
+end
+
+local function imageDocuments(opf, opfPath)
+    local result = {}
+    for path, image in pairs(imageAssets(opf, opfPath)) do
+        if image.supported then
+            result[path] = image.media
         end
     end
     return result
@@ -378,6 +384,155 @@ local function transformImage(content, media, tempBase, palette)
         return recolorSvg(content, palette)
     end
     return recolorRaster(content, media, tempBase, palette)
+end
+
+local function isMonochromeSvgColor(value)
+    value = (value or ""):lower():match("^%s*(.-)%s*$")
+    if value == "none" or value == "transparent"
+        or value == "currentcolor" or value == "black" or value == "white"
+    then
+        return true
+    end
+
+    local hex = value:match("^#([%x]+)$")
+    if hex then
+        if #hex == 3 or #hex == 4 then
+            return hex:sub(1, 1) == hex:sub(2, 2)
+                and hex:sub(2, 2) == hex:sub(3, 3)
+        elseif #hex == 6 or #hex == 8 then
+            local r = hex:sub(1, 2)
+            local g = hex:sub(3, 4)
+            local b = hex:sub(5, 6)
+            return r == g and g == b
+        end
+        return false
+    end
+
+    local r, g, b = value:match(
+        "^rgb%s*%(%s*(%d+)%s*,%s*(%d+)%s*,%s*(%d+)%s*%)$"
+    )
+    if r then
+        r, g, b = tonumber(r), tonumber(g), tonumber(b)
+        return r == g and g == b and r >= 0 and r <= 255
+    end
+    return false
+end
+
+local function svgHasOnlyMonochromeColors(content)
+    local lower = content:lower()
+    if lower:find("rgba%s*%(") or lower:find("hsl%s*%(")
+        or lower:find("hsla%s*%(")
+    then
+        return false
+    end
+
+    for _, attribute in ipairs({ "fill", "stroke", "color" }) do
+        for value in lower:gmatch(attribute .. '%s*=%s*"([^"]*)"') do
+            if not isMonochromeSvgColor(value) then return false end
+        end
+        for value in lower:gmatch(attribute .. "%s*=%s*'([^']*)'") do
+            if not isMonochromeSvgColor(value) then return false end
+        end
+        for value in lower:gmatch(attribute .. [[%s*:%s*([^;"']+)]]) do
+            if not isMonochromeSvgColor(value) then return false end
+        end
+    end
+    return true
+end
+
+local function isEligibleImage(content, media)
+    if media == "image/svg+xml" then
+        return svgHasOnlyMonochromeColors(content)
+            and recolorSvg(content, PALETTES["pure-light"]) ~= nil
+    end
+    if media ~= "image/png" and media ~= "image/jpeg" then
+        return false
+    end
+    if #content > MAX_COMPRESSED_BYTES then return false end
+
+    local ok, bb = pcall(
+        RenderImage.renderImageDataWithMupdf,
+        RenderImage,
+        content,
+        #content
+    )
+    if not ok or not bb then return false end
+
+    local eligible = isSmallMonochromeRaster(bb)
+    pcall(bb.free, bb)
+    return eligible
+end
+
+function Epub.inspect(sourcePath)
+    local reader = Archiver.Reader:new()
+    if not reader:open(sourcePath) then
+        return nil, "Could not open source EPUB."
+    end
+
+    -- Populate KOReader Archiver's entry lookup table.
+    for _ in reader:iterate() do end
+
+    local container = reader:extractToMemory("META-INF/container.xml")
+    local opfPath = containerRootfile(container)
+    if not opfPath then
+        closeQuietly(reader)
+        return nil, "EPUB package document was not found."
+    end
+    opfPath = normalizePath(opfPath)
+
+    local opf = reader:extractToMemory(opfPath)
+    if not opf then
+        closeQuietly(reader)
+        return nil, "EPUB package document could not be read."
+    end
+
+    local assets = imageAssets(opf, opfPath)
+    local image_count = 0
+    for _ in pairs(assets) do image_count = image_count + 1 end
+    if image_count == 0 then
+        closeQuietly(reader)
+        return {
+            image_count = 0,
+            eligible_count = 0,
+            all_eligible = false,
+        }
+    end
+
+    local eligible_count = 0
+    for path, image in pairs(assets) do
+        if not image.supported then
+            closeQuietly(reader)
+            return {
+                image_count = image_count,
+                eligible_count = eligible_count,
+                all_eligible = false,
+            }
+        end
+
+        local content = reader:extractToMemory(path)
+        if content == nil then
+            closeQuietly(reader)
+            return nil, "Could not read EPUB image: " .. tostring(path)
+        end
+
+        local ok, eligible = pcall(isEligibleImage, content, image.media)
+        if not ok or not eligible then
+            closeQuietly(reader)
+            return {
+                image_count = image_count,
+                eligible_count = eligible_count,
+                all_eligible = false,
+            }
+        end
+        eligible_count = eligible_count + 1
+    end
+
+    closeQuietly(reader)
+    return {
+        image_count = image_count,
+        eligible_count = eligible_count,
+        all_eligible = eligible_count == image_count,
+    }
 end
 
 function Epub.generate(sourcePath, targetPath, paletteName)
