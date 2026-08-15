@@ -1,4 +1,4 @@
-# retry after tightening exact source anchors
+# retry after exact version-line fix
 name: Prepare Burrow 0.4.4-beta.1 selective ornaments
 
 on:
