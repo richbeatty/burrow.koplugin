@@ -1,0 +1,109 @@
+name: Finalize Burrow 0.4.3 stable candidate
+
+on:
+  push:
+    branches:
+      - agent/0.4.3-stable
+    paths:
+      - '.github/workflows/__finalize-0.4.3-stable.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out stable candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply stable-only changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          import subprocess
+
+          # Stable-only default: unset soft palette is off; explicit saved choices still win.
+          p = Path('plugins/burrow.koplugin/burrow_settings.lua')
+          s = p.read_text(encoding='utf-8')
+          block = """        id = "soft_palette",
+                  text = _("Soft light and dark palette"),
+                  help_text = _("Replace KOReader's pure white and black UI source colors with softer neutral tones. Night mode uses KOReader's native inversion."),
+                  default = true,"""
+          assert s.count(block) == 1
+          p.write_text(s.replace(block, block.replace('default = true,', 'default = false,'), 1), encoding='utf-8')
+
+          p = Path('plugins/burrow.koplugin/burrow_version.lua')
+          s = p.read_text(encoding='utf-8')
+          assert s.count('    VERSION = "0.4.3-beta.11"') == 1
+          assert s.count('    DISPLAY_VERSION = "0.4.3-beta.11"') == 1
+          s = s.replace('    VERSION = "0.4.3-beta.11"', '    VERSION = "0.4.3"', 1)
+          s = s.replace('    DISPLAY_VERSION = "0.4.3-beta.11"', '    DISPLAY_VERSION = "0.4.3"', 1)
+          p.write_text(s, encoding='utf-8')
+
+          # Update README from the exact beta.11 text with asserted replacements only.
+          p = Path('README.md')
+          s = p.read_text(encoding='utf-8')
+          repls = [
+              ('> Burrow 0.4.0 is the first stable release. Back up your KOReader data folder before installing or upgrading.', '> Back up your KOReader data folder before installing or upgrading.'),
+              ('- Adjustable cover size, spacing, and grids up to 8 by 8', '- Adjustable cover size, spacing, and grids from 1 by 1 up to 8 by 8'),
+              ('- Return to Library navigation independent of automatic series grouping', '- Return to Library navigation independent of automatic series grouping\n- Home and Store navigation throughout the configured library folder tree'),
+              ('### Reader and Controls\n\n- Quick Settings with optional KoSync Push and Pull actions\n- Independent reader status-bar margins and preset cycling\n- Reading-location return control\n- Native top and in-reader menus\n- Light and dark mode-aware Burrow icons\n', '### Reading and controls\n\n- Burrow Quick Settings in File Manager and Reader, with optional KoSync Push and Pull actions\n- Four-way rotation with remembered orientation between library, reader, and KOReader restarts\n- Independent reader status-bar margins and preset cycling\n- Reading-location return control\n- Two-sided Reading progress footer with configurable left and right information\n- Human-readable reading-time estimates such as `1 min left in chapter` and `1 hr 12 min left in book`\n- Bionic Reading for EPUB books using real bold fixation prefixes while leaving the original EPUB untouched\n- Search in Book support while Bionic Reading is active\n- Last-used reader presentation can carry into the next book while progress, bookmarks, highlights, annotations, and reading status remain book-specific\n- Native KOReader top and in-reader menus remain available\n\n### Appearance\n\n- Optional softer black and white palette for the KOReader interface and reflowable reader pages\n- The softer palette is **off by default** and can be enabled under **Burrow Settings > Appearance**\n- Optional recoloring of small monochrome EPUB ornaments to match the softer reader palette\n- Optional proportional crop-to-fill for the current book cover on the sleep screen, without stretching or distortion\n- Light and dark mode-aware Burrow icons and menu treatments\n'),
+              ('## Release notes\n\nBurrow 0.4.0 marks the end of the public beta period and is the first stable release.\n\n- The built-in Cover Browser must remain disabled while Burrow is active.\n- Very large cover settings may leave little space between covers on dense grids.\n- Newer KOReader releases may show a compatibility warning until they have been tested.\n\nPlease report repeatable crashes, layout problems, failed downloads, or data-loss concerns through the issue tracker.\n', '## Burrow 0.4.3\n\nBurrow 0.4.3 expands the reader side of the plugin while preserving the library and Store behavior from 0.4.2.\n\nHighlights include Bionic Reading for EPUB books, last-used reading-presentation inheritance, a configurable two-sided Reading progress footer with compact time estimates, an optional soft black and white palette that is off by default, optional decorative-element recoloring, and proportional sleep-cover crop-to-fill.\n\n### Known limitation\n\nToggling Bionic Reading can occasionally move the reading position by a few pages because real bold text changes line wrapping and pagination. Burrow uses nearby text anchoring with a percentage fallback to keep the reader close to the same passage.\n\nPlease report repeatable crashes, layout problems, failed downloads, or data-loss concerns through the issue tracker.\n'),
+          ]
+          for old, new in repls:
+              assert s.count(old) == 1, old[:80]
+              s = s.replace(old, new, 1)
+          extra_repls = [
+              ('- Cover grid and cover list views', '- Cover Grid and Cover List views'),
+              ('- Burrow Quick Settings in File Manager and Reader, with optional KoSync Push and Pull actions', '- Burrow Quick Settings in File Manager and Reader\n- Optional KoSync Push and Pull actions'),
+              ('Highlights include Bionic Reading for EPUB books, last-used reading-presentation inheritance, a configurable two-sided Reading progress footer with compact time estimates, an optional soft black and white palette that is off by default, optional decorative-element recoloring, and proportional sleep-cover crop-to-fill.', 'Highlights include:\n\n- Bionic Reading for EPUB books\n- Last-used reading-presentation inheritance between books\n- A configurable two-sided Reading progress footer with compact time estimates\n- An optional soft black and white palette, now off by default\n- Optional recoloring for small monochrome EPUB decorative elements\n- Proportional crop-to-fill for the current book cover on the sleep screen\n- Continued updater, rotation, Quick Settings, library, series, and Store stability work from the beta cycle'),
+          ]
+          for old, new in extra_repls:
+              assert s.count(old) == 1, old[:80]
+              s = s.replace(old, new, 1)
+          p.write_text(s, encoding='utf-8')
+
+          # Replace the corrupted beta changelog with clean stable history, then add 0.4.3.
+          changelog = subprocess.check_output(['git', 'show', 'origin/main:CHANGELOG.md'], text=True, encoding='utf-8')
+          marker = '## [Unreleased]\n'
+          section = "## [0.4.3] - 2026-08-14\n\n### Added\n\n- Added Bionic Reading for EPUB books with real bold fixation prefixes and cached shadow-EPUB rendering so original books remain untouched\n- Added Search in Book compatibility and nearby semantic text anchoring for Bionic Reading\n- Added last-used reader-presentation inheritance between books while keeping progress, bookmarks, highlights, annotations, reading status, stylesheet selection, and typography-language data book-specific\n- Added an optional softer black and white palette for the KOReader interface and reflowable reader pages\n- Added optional recoloring of small monochrome EPUB ornaments to match the soft reader palette while leaving covers, large images, and colored artwork unchanged\n- Added a configurable two-sided Reading progress footer with separate left/right content, bottom inset, and horizontal inset controls\n- Added proportional crop-to-fill for the current book cover on the sleep screen without stretching or distortion\n\n### Changed\n\n- Reader Controls opens Burrow Quick Settings as a standalone top panel instead of automatically opening KOReader's bottom Text/Config panel underneath it\n- Reading-time values in Burrow's split footer now use compact human-readable wording such as `1 min` and `1 hr 12 min`\n- The softer black and white palette is now opt-in and defaults off when no preference has been saved; explicit enabled or disabled choices are preserved\n\n### Fixed\n\n- Prevented Bionic Reading initialization failures from quarantining unrelated Quick Settings behavior\n- Preserved Search in Book behavior across Bionic inline text-node boundaries\n- Prevented unresolved normal-DOM XPointers from sending Bionic Reading back to the beginning of the book\n- Stabilized the Reading progress footer lifecycle, placement, and Burrow Settings controls\n- Removed duplicate Quick Settings button IDs left behind by earlier test builds\n- Hid inactive soft-palette pager boundary chevrons without changing unrelated KOReader menus\n- Kept the sleep-cover crop control in Burrow Settings > Appearance without modifying KOReader's native menu builders\n\n### Known limitation\n\n- Toggling Bionic Reading can occasionally move a few pages because real bold changes line wrapping and pagination; Burrow uses nearby semantic text anchoring with percentage fallback to keep the reader close to the same text\n"
+          assert changelog.count(marker) == 1
+          changelog = changelog.replace(marker, marker + '\n' + section + '\n', 1)
+          old = '[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.4.2...HEAD'
+          assert old in changelog
+          changelog = changelog.replace(old, '[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.4.3...HEAD', 1)
+          link = '[0.4.2]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.4.2'
+          assert link in changelog
+          changelog = changelog.replace(link, '[0.4.3]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.4.3\n' + link, 1)
+          Path('CHANGELOG.md').write_text(changelog, encoding='utf-8')
+          PYCODE
+
+          rm .github/workflows/__finalize-0.4.3-stable.yml
+
+          test "$(grep -c 'VERSION = "0.4.3"' plugins/burrow.koplugin/burrow_version.lua)" -eq 1
+          grep -A4 'id = "soft_palette"' plugins/burrow.koplugin/burrow_settings.lua | grep -q 'default = false'
+          grep -q '^## \[0.4.3\] - 2026-08-14$' CHANGELOG.md
+          grep -q 'softer palette is \*\*off by default\*\*' README.md
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          Path('CHANGELOG.md').read_text(encoding='utf-8')
+          Path('README.md').read_text(encoding='utf-8')
+          PYCODE
+          git diff --check
+
+      - name: Commit finalized stable candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Prepare Burrow 0.4.3 stable"
+          git push origin HEAD:agent/0.4.3-stable
