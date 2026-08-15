@@ -87,7 +87,7 @@ jobs:
 
           rm .github/workflows/__finalize-0.4.3-stable.yml
 
-          test "$(grep -c 'VERSION = "0.4.3"' plugins/burrow.koplugin/burrow_version.lua)" -eq 1
+          test "$(grep -c '^    VERSION = "0.4.3",$' plugins/burrow.koplugin/burrow_version.lua)" -eq 1
           grep -A4 'id = "soft_palette"' plugins/burrow.koplugin/burrow_settings.lua | grep -q 'default = false'
           grep -q '^## \[0.4.3\] - 2026-08-14$' CHANGELOG.md
           grep -q 'softer palette is \*\*off by default\*\*' README.md
