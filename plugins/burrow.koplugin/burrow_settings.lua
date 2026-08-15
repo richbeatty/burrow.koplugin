@@ -171,6 +171,14 @@ function BurrowSettings:getModuleManifest()
         })
     end
 
+    -- Selective decorative EPUB handling is independent of the optional
+    -- soft palette. Load it before Quick Settings so its CreDocument wrapper
+    -- stays inside Bionic Reading's later shadow-file wrapper.
+    add("epub_ornaments", "2-epub-ornaments.lua", "early", {
+        filename = "2-epub-ornaments.lua",
+        feature = "epub_ornaments",
+    })
+
     if self:isFeatureEnabled("quick_settings") then
         add("quick_settings", "2-quick-settings.lua", "early", {
             filename = "2-quick-settings.lua",

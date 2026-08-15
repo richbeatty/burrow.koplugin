@@ -22,15 +22,16 @@ function Module.apply(plugin)
     local Device = require("device")
     local SpinWidget = require("ui/widget/spinwidget")
     local UIManager = require("ui/uimanager")
+    local logger = require("logger")
     local _ = require("l10n.gettext")
     local T = require("ffi/util").template
 
     local ORNAMENT_SETTING = "burrow_soft_palette_recolor_ornaments"
 
-    -- Mark the real reader CreDocument before CRengine loads it. The soft
-    -- palette EPUB shadow loader checks this marker so file-browser cover and
-    -- metadata probes are never redirected through a transformed copy. Keep
-    -- this wrapper composable with Bionic Reading and the other Burrow hooks.
+    -- Mark the real reader CreDocument before CRengine loads it. The
+    -- decorative EPUB shadow loader checks this marker so file-browser cover
+    -- and metadata probes are never redirected through a transformed copy.
+    -- Keep this wrapper composable with Bionic Reading and other Burrow hooks.
     if not plugin._burrow_soft_palette_reader_context_hook then
         plugin._burrow_soft_palette_reader_context_hook = true
         local originalDocSettingsLoad = plugin.onDocSettingsLoad
@@ -41,17 +42,94 @@ function Module.apply(plugin)
             end
             local doc = document or self.document or (self.ui and self.ui.document)
             if doc and doc.provider == "crengine" then
+                doc._burrow_epub_ornament_reader_context = true
+                -- Retain the old marker for same-process upgrade compatibility.
                 doc._burrow_soft_palette_reader_context = true
             end
             return result
         end
     end
 
-    -- This is an experimental test overlay. Turn the new ornament treatment on
-    -- for first-time testers so reopening an EPUB immediately exercises it.
-    -- The setting remains independently switchable in Burrow Settings.
+    -- Preserve the existing default and every saved user choice. Decorative
+    -- EPUB handling now works independently of the optional soft palette.
     if G_reader_settings:readSetting(ORNAMENT_SETTING) == nil then
         G_reader_settings:saveSetting(ORNAMENT_SETTING, true)
+    end
+
+    local ornament_reload_pending = false
+
+    local function scheduleOrnamentReload()
+        if ornament_reload_pending then return end
+        ornament_reload_pending = true
+
+        -- Wait two UI ticks. KOReader's DeviceListener/ReaderTypeset handlers
+        -- first update Night Mode / native image inversion, and Burrow Quick
+        -- Settings gets one tick to refresh its own menu before any reload.
+        UIManager:tickAfterNext(function()
+            ornament_reload_pending = false
+
+            local ok_reader, ReaderUI = pcall(require, "apps/reader/readerui")
+            local reader = ok_reader and ReaderUI.instance or nil
+            local document = reader and reader.document or nil
+            if not document
+                or reader.tearing_down
+                or document._burrow_epub_ornaments_active ~= true
+            then
+                return
+            end
+
+            local ornaments = package.loaded["burrow.internal.2_epub_ornaments"]
+            if type(ornaments) ~= "table"
+                or type(ornaments.desiredTone) ~= "function"
+            then
+                return
+            end
+
+            local desired = ornaments.desiredTone(document)
+            if not desired
+                or desired == document._burrow_epub_ornaments_tone
+                or type(reader.reloadDocument) ~= "function"
+            then
+                return
+            end
+
+            local ok_reload, reload_error = pcall(
+                reader.reloadDocument,
+                reader,
+                nil,
+                true
+            )
+            if not ok_reload then
+                logger.warn(
+                    "[Burrow ornaments] Could not reload after image-mode change",
+                    reload_error
+                )
+            end
+        end)
+    end
+
+    if not plugin._burrow_epub_ornament_mode_reload_hook then
+        plugin._burrow_epub_ornament_mode_reload_hook = true
+
+        local originalToggleNightMode = plugin.onToggleNightMode
+        function plugin:onToggleNightMode(...)
+            local result
+            if originalToggleNightMode then
+                result = originalToggleNightMode(self, ...)
+            end
+            scheduleOrnamentReload()
+            return result
+        end
+
+        local originalToggleNightmodeImages = plugin.onToggleNightmodeImages
+        function plugin:onToggleNightmodeImages(...)
+            local result
+            if originalToggleNightmodeImages then
+                result = originalToggleNightmodeImages(self, ...)
+            end
+            scheduleOrnamentReload()
+            return result
+        end
     end
 
     -- Clean duplicate Quick Settings button IDs left behind by older test
@@ -346,11 +424,10 @@ function Module.apply(plugin)
                     },
                     {
                         text = _("Recolor decorative book elements"),
-                        help_text = _("For EPUB books, recolor only small monochrome images and simple SVG ornaments to match Burrow's soft page colors. Covers, large images, and colored artwork are left unchanged. Reopen the book after changing this setting."),
+                        help_text = _("For EPUB books, adjust only small monochrome images and simple SVG ornaments so they follow the page in light and night modes. Covers, large images, and colored artwork keep KOReader's normal image behavior. Reopen the book after changing this setting."),
                         checked_func = function()
                             return G_reader_settings:isTrue(ORNAMENT_SETTING)
                         end,
-                        enabled_func = enabled,
                         callback = function()
                             G_reader_settings:saveSetting(
                                 ORNAMENT_SETTING,
