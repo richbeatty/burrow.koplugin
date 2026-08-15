@@ -43,9 +43,81 @@ function Module.apply()
 
     local Blitbuffer = require("ffi/blitbuffer")
     local CreDocument = require("document/credocument")
+    local DeviceListener = require("device/devicelistener")
     local OrnamentEpub = require("burrow_soft_palette_epub")
     local Screen = require("device").screen
+    local UIManager = require("ui/uimanager")
     local logger = require("logger")
+
+    local reload_pending = false
+
+    local function scheduleReloadIfToneChanged()
+        if reload_pending then return end
+        reload_pending = true
+
+        UIManager:tickAfterNext(function()
+            reload_pending = false
+
+            local ok_reader, ReaderUI = pcall(require, "apps/reader/readerui")
+            local reader = ok_reader and ReaderUI.instance or nil
+            local document = reader and reader.document or nil
+            if not document
+                or reader.tearing_down
+                or document._burrow_epub_ornaments_active ~= true
+            then
+                return
+            end
+
+            local wanted = desiredTone(document, Screen)
+            if wanted == document._burrow_epub_ornaments_tone
+                or type(reader.reloadDocument) ~= "function"
+            then
+                return
+            end
+
+            local ok_reload, reload_error = pcall(
+                reader.reloadDocument,
+                reader,
+                nil,
+                true
+            )
+            if not ok_reload then
+                logger.warn(
+                    "[Burrow ornaments] Could not reload after image-mode change",
+                    reload_error
+                )
+            end
+        end)
+    end
+
+    -- DeviceListener owns the actual Night Mode state transition. Wrapping the
+    -- state owner catches ToggleNightMode as well as SetNightMode, while leaving
+    -- KOReader's inversion implementation untouched.
+    if not DeviceListener._burrow_epub_ornament_night_hook_v1 then
+        DeviceListener._burrow_epub_ornament_night_hook_v1 = true
+        local originalToggleNightMode = DeviceListener.onToggleNightMode
+
+        function DeviceListener:onToggleNightMode(...)
+            local result = originalToggleNightMode(self, ...)
+            scheduleReloadIfToneChanged()
+            return result
+        end
+    end
+
+    -- ReaderTypeset ultimately changes this CreDocument flag through
+    -- setNightmodeImages(). Hook the state setter instead of listening for the
+    -- ToggleNightmodeImages event, which ReaderTypeset consumes before plugins
+    -- later in ReaderUI's child list can reliably see it.
+    if not CreDocument._burrow_epub_ornament_image_mode_hook_v1 then
+        CreDocument._burrow_epub_ornament_image_mode_hook_v1 = true
+        local originalSetNightmodeImages = CreDocument.setNightmodeImages
+
+        function CreDocument:setNightmodeImages(...)
+            local result = originalSetNightmodeImages(self, ...)
+            scheduleReloadIfToneChanged()
+            return result
+        end
+    end
 
     if not CreDocument._burrow_epub_ornament_loader_v2 then
         CreDocument._burrow_epub_ornament_loader_v2 = true

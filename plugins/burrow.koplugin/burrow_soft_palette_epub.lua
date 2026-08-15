@@ -277,7 +277,7 @@ local function recolorRaster(content, media, tempBase, palette)
 
     if not write_ok then
         os.remove(tempPath)
-        logger.warn("[Burrow palette] Could not encode recolored ornament", write_err)
+        logger.warn("[Burrow ornaments] Could not encode adjusted ornament", write_err)
         return nil
     end
 
@@ -484,7 +484,7 @@ function Epub.generate(sourcePath, targetPath, paletteName)
     local ok, err = os.rename(tempPath, targetPath)
     if not ok then
         os.remove(tempPath)
-        return false, "Could not finalize soft-palette EPUB cache: " .. tostring(err)
+        return false, "Could not finalize decorative EPUB cache: " .. tostring(err)
     end
 
     logger.info("[Burrow ornaments] Built EPUB ornament cache", paletteName, recolored)
