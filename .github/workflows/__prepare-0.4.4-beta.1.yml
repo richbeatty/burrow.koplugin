@@ -1,3 +1,4 @@
+# retry after tightening exact source anchors
 name: Prepare Burrow 0.4.4-beta.1 selective ornaments
 
 on:
