@@ -347,7 +347,7 @@ function Module.apply(plugin)
                     },
                     {
                         text = _("Recolor decorative book elements"),
-                        help_text = _("For EPUB books whose in-text images are all small monochrome ornaments, let those ornaments follow the page in light and night modes. Books with mixed, large, colored, or unknown images keep KOReader's normal image behavior. Reopen the book after changing this setting."),
+                        help_text = _("Normalize qualifying small monochrome EPUB decorations to true grayscale so KOReader's native Night Mode inversion can follow the page. Covers, photographs, colored artwork, and other images keep KOReader's normal image behavior. Reopen the book after changing this setting."),
                         checked_func = function()
                             return G_reader_settings:isTrue(ORNAMENT_SETTING)
                         end,
