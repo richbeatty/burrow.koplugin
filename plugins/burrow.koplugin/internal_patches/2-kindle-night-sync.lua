@@ -9,20 +9,18 @@ local Module = {
 }
 package.loaded[MODULE_KEY] = Module
 
-function Module.apply()
-    if Module.applied then return true end
-
+function Module.sync()
     local Device = require("device")
 
     -- Kindle uses the framebuffer's hardware inversion flag for Night Mode.
-    -- KOReader keeps its own logical Screen.night_mode state separately. A
-    -- restart can therefore inherit a stale hardware flag even while KOReader's
-    -- saved/logical Night Mode is off. Android does not use this path.
+    -- KOReader keeps its own logical Screen.night_mode state separately. Keep
+    -- these synchronized without ever changing the user's saved Night Mode
+    -- preference or Device.orig_hw_nightmode. This is safe to call repeatedly,
+    -- including immediately before/after Burrow reloads an ornament shadow.
     if not Device:isKindle()
         or not Device:canHWInvert()
         or not Device:canModifyFBInfo()
     then
-        Module.applied = true
         return true
     end
 
@@ -58,10 +56,6 @@ function Module.apply()
             return false, "Kindle hardware Night Mode did not accept the requested state"
         end
 
-        -- Do not change G_reader_settings or Device.orig_hw_nightmode. KOReader
-        -- still owns the user's Night Mode setting and will restore the Kindle's
-        -- pre-KOReader hardware state when it finally exits. We only make the
-        -- hardware match KOReader's current logical state while Burrow is open.
         local UIManager = require("ui/uimanager")
         UIManager:setDirty("all", "full")
 
@@ -71,6 +65,15 @@ function Module.apply()
             logical_night
         )
     end
+
+    return true
+end
+
+function Module.apply()
+    if Module.applied then return true end
+
+    local ok, err = Module.sync()
+    if not ok then return false, err end
 
     Module.applied = true
     return true
