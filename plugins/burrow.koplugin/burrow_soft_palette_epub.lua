@@ -7,7 +7,7 @@ local logger = require("logger")
 local util = require("util")
 
 local Epub = {
-    CACHE_VERSION = "ornaments-v3-single-source",
+    CACHE_VERSION = "ornaments-v4-native-grayscale",
 }
 
 local PALETTES = {
@@ -17,7 +17,7 @@ local PALETTES = {
     },
     ["soft-light"] = {
         dark = { 0x20, 0x20, 0x20 },
-        light = { 0xF2, 0xF2, 0xF0 },
+        light = { 0xF2, 0xF2, 0xF2 },
     },
 }
 
@@ -273,9 +273,33 @@ local function recolorRaster(content, media, tempBase, palette)
 
     local write_ok, write_err
     if media == "image/jpeg" then
-        write_ok, write_err = pcall(out.writeJPG, out, tempPath, 95)
+        local Jpeg = require("ffi/jpeg")
+        local ffi = require("ffi")
+
+        -- CRengine deliberately pre-inverts only *colored* image pixels in
+        -- Night Mode so photographs keep their normal appearance after the
+        -- whole page is inverted. Encode eligible JPEG ornaments as a true
+        -- grayscale JPEG (TJSAMP_GRAY), guaranteeing r == g == b when
+        -- CRengine decodes them. They will then follow the page naturally.
+        local bbdump, components = out:getBufferData()
+        local call_ok, encoded, encode_err = pcall(
+            Jpeg.encodeToFile,
+            tempPath,
+            ffi.cast("uint8_t*", bbdump.data),
+            bbdump.w,
+            bbdump.h,
+            components,
+            95,
+            bbdump.stride,
+            ffi.C.TJSAMP_GRAY
+        )
+        if bbdump ~= out then pcall(bbdump.free, bbdump) end
+        write_ok = call_ok and encoded ~= false
+        write_err = call_ok and encode_err or encoded
     else
-        write_ok, write_err = pcall(out.writePNG, out, tempPath)
+        local call_ok, encoded, encode_err = pcall(out.writePNG, out, tempPath)
+        write_ok = call_ok and encoded ~= false
+        write_err = call_ok and encode_err or encoded
     end
 
     pcall(out.free, out)
@@ -599,19 +623,28 @@ function Epub.generate(sourcePath, targetPath, paletteName)
 
             local media = imageSet[normalizePath(entry.path)]
             if media then
-                local ok, transformed = pcall(
-                    transformImage,
-                    content,
-                    media,
-                    tempImageBase,
-                    palette
-                )
-                if ok and transformed then
-                    content = transformed
-                    recolored = recolored + 1
-                    logger.dbg("[Burrow ornaments] Adjusted decorative EPUB image", entry.path)
-                elseif not ok then
-                    logger.warn("[Burrow ornaments] Ornament transform failed", entry.path, transformed)
+                -- Raster transforms run the conservative monochrome detector
+                -- internally. SVGs need one extra gate because recolorSvg()
+                -- intentionally rewrites only recognized gray tokens; without
+                -- this check a mixed-color SVG could otherwise be changed only
+                -- in part. Leave any such artwork byte-for-byte untouched.
+                local safe_svg = media ~= "image/svg+xml"
+                    or svgHasOnlyMonochromeColors(content)
+                if safe_svg then
+                    local ok, transformed = pcall(
+                        transformImage,
+                        content,
+                        media,
+                        tempImageBase,
+                        palette
+                    )
+                    if ok and transformed then
+                        content = transformed
+                        recolored = recolored + 1
+                        logger.dbg("[Burrow ornaments] Normalized decorative EPUB image", entry.path)
+                    elseif not ok then
+                        logger.warn("[Burrow ornaments] Ornament transform failed", entry.path, transformed)
+                    end
                 end
             end
 
@@ -642,7 +675,7 @@ function Epub.generate(sourcePath, targetPath, paletteName)
         return false, "Could not finalize decorative EPUB cache: " .. tostring(err)
     end
 
-    logger.info("[Burrow ornaments] Built EPUB ornament cache", paletteName, recolored)
+    logger.info("[Burrow ornaments] Built grayscale ornament cache", paletteName, recolored)
     return true, recolored
 end
 
@@ -666,7 +699,7 @@ function Epub.ensureCache(sourcePath, paletteName)
         end
         os.remove(countFile)
     elseif lfs.attributes(target, "mode") == "file" then
-        -- A completed v2 cache always has a count marker. If it is missing,
+        -- A completed Burrow ornament cache always has a count marker. If it is missing,
         -- rebuild rather than trusting a potentially interrupted cache write.
         os.remove(target)
     end

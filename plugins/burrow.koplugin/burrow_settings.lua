@@ -161,6 +161,14 @@ function BurrowSettings:getModuleManifest()
         })
     end
 
+    -- Kindle can preserve a stale hardware inversion flag across a KOReader
+    -- restart even when KOReader's logical Night Mode is light. Synchronize the
+    -- Kindle-only hardware flag before any Burrow palette/UI early module paints.
+    add("kindle_night_sync", "2-kindle-night-sync.lua", "early", {
+        filename = "2-kindle-night-sync.lua",
+        feature = "kindle_night_sync",
+    })
+
     -- Apply the shared source palette before any other early UI module builds
     -- widgets or icons. It is its own guarded feature so a palette conflict can
     -- be quarantined without disabling Quick Settings, the library, or reader.

@@ -31,16 +31,16 @@ function Module.apply()
     local Blitbuffer = require("ffi/blitbuffer")
     local CreDocument = require("document/credocument")
     local OrnamentEpub = require("burrow_soft_palette_epub")
-    local Screen = require("device").screen
     local logger = require("logger")
 
-    -- Do not observe or alter KOReader's Night Mode transition. In particular,
-    -- Kindle uses hardware framebuffer inversion, so a Burrow reload in the
-    -- middle of that transition can leave the physical inversion and saved
-    -- Night Mode state out of sync. Instead, classify the EPUB once when it is
-    -- opened and let KOReader's existing screen inversion handle safe ornaments.
-    if not CreDocument._burrow_epub_ornament_loader_v3 then
-        CreDocument._burrow_epub_ornament_loader_v3 = true
+    -- CRengine already has the night-mode behavior we need: when KOReader's
+    -- native image-preservation option is enabled, CRengine pre-inverts only
+    -- pixels whose RGB channels differ. Exact grayscale pixels are left alone
+    -- and therefore follow the final page inversion naturally. Normalize only
+    -- Burrow's conservative ornament class to exact grayscale once at open
+    -- time, then leave Night Mode completely owned by KOReader.
+    if not CreDocument._burrow_epub_ornament_loader_v4 then
+        CreDocument._burrow_epub_ornament_loader_v4 = true
         local originalLoadDocument = CreDocument.loadDocument
 
         function CreDocument:loadDocument(fullDocument)
@@ -56,87 +56,46 @@ function Module.apply()
             end
 
             local originalFile = self.file
-            local profile, inspectErr = OrnamentEpub.inspect(originalFile)
-            if not profile or profile.all_eligible ~= true then
-                if inspectErr then
-                    logger.warn("[Burrow ornaments] Could not inspect EPUB", inspectErr)
+            local palette = softPaletteActive(Blitbuffer)
+                and "soft-light"
+                or "pure-light"
+            local shadow, shadowErr, normalized = OrnamentEpub.ensureCache(
+                originalFile,
+                palette
+            )
+
+            -- No qualifying ornaments, or a cache-generation failure: use the
+            -- original EPUB without changing KOReader's image behavior. Mixed
+            -- books are safe because ensureCache copies every non-qualifying
+            -- image byte-for-byte and changes only images that pass the narrow
+            -- ornament detector.
+            if not shadow then
+                if shadowErr then
+                    logger.warn(
+                        "[Burrow ornaments] Falling back to original EPUB",
+                        shadowErr
+                    )
                 end
                 return originalLoadDocument(self, fullDocument)
             end
 
-            -- Pure black/white needs no shadow EPUB at all. When Burrow's soft
-            -- palette is active, build one light-source copy so ornaments match
-            -- the soft page. Night Mode will invert that same source naturally;
-            -- there is never a separate night EPUB and never a day/night reload.
-            local shadow
-            if softPaletteActive(Blitbuffer) then
-                local shadowErr, recolored
-                shadow, shadowErr, recolored = OrnamentEpub.ensureCache(
-                    originalFile,
-                    "soft-light"
-                )
-                if not shadow or recolored ~= profile.image_count then
-                    if shadowErr then
-                        logger.warn(
-                            "[Burrow ornaments] Falling back to native image handling",
-                            shadowErr
-                        )
-                    elseif recolored ~= profile.image_count then
-                        logger.warn(
-                            "[Burrow ornaments] Soft cache did not contain every eligible image",
-                            recolored,
-                            profile.image_count
-                        )
-                    end
-                    return originalLoadDocument(self, fullDocument)
-                end
-            end
-
-            if shadow then self.file = shadow end
+            self.file = shadow
             local ok, result = pcall(originalLoadDocument, self, fullDocument)
             self.file = originalFile
             if not ok then error(result) end
 
             if result then
                 self._burrow_epub_ornaments_active = true
-                self._burrow_epub_ornaments_screen_invert = true
-                self._burrow_epub_ornaments_image_count = profile.image_count
+                self._burrow_epub_ornaments_image_count = tonumber(normalized) or 0
                 self._burrow_epub_ornaments_shadow_file = shadow
+                self._burrow_epub_ornaments_palette = palette
                 logger.info(
-                    "[Burrow ornaments] Enabled native page inversion for decorative EPUB images",
-                    profile.image_count,
-                    shadow and "soft" or "pure"
+                    "[Burrow ornaments] Loaded grayscale-normalized EPUB shadow",
+                    palette,
+                    self._burrow_epub_ornaments_image_count
                 )
             end
             return result
-        end
-    end
-
-    -- KOReader normally pre-inverts EPUB images in Night Mode so photographs
-    -- retain their original appearance after the whole screen is inverted.
-    -- For a book we have proven contains only our conservative ornament class,
-    -- temporarily disable that pre-inversion for the draw call. The screen then
-    -- inverts the ornament together with the page. This changes no saved native
-    -- image setting and does not affect books that contain mixed/unknown images.
-    if not CreDocument._burrow_epub_ornament_draw_v3 then
-        CreDocument._burrow_epub_ornament_draw_v3 = true
-        local originalDrawCurrentView = CreDocument.drawCurrentView
-
-        function CreDocument:drawCurrentView(...)
-            if self._burrow_epub_ornaments_screen_invert ~= true
-                or not Screen.night_mode
-            then
-                return originalDrawCurrentView(self, ...)
-            end
-
-            local originalNightmodeImages = self._nightmode_images
-            self._nightmode_images = false
-            local results = { pcall(originalDrawCurrentView, self, ...) }
-            self._nightmode_images = originalNightmodeImages
-
-            local ok = table.remove(results, 1)
-            if not ok then error(results[1]) end
-            return unpack(results)
         end
     end
 
