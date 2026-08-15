@@ -7,7 +7,7 @@ BurrowSettings.features = {
         id = "soft_palette",
         text = _("Soft light and dark palette"),
         help_text = _("Replace KOReader's pure white and black UI source colors with softer neutral tones. Night mode uses KOReader's native inversion."),
-        default = true,
+        default = false,
     },
     {
         id = "library_visuals",

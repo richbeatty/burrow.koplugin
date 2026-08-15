@@ -10,7 +10,7 @@ Burrow brings your local library, online catalogs, series navigation, and useful
 
 [Download Burrow](https://github.com/richbeatty/burrow.koplugin/releases) · [Report a bug](https://github.com/richbeatty/burrow.koplugin/issues/new?template=bug_report.yml) · [Request a feature](https://github.com/richbeatty/burrow.koplugin/issues/new?template=feature_request.yml)
 
-> Burrow 0.4.0 is the first stable release. Back up your KOReader data folder before installing or upgrading.
+> Back up your KOReader data folder before installing or upgrading.
 
 ## Screenshots
 
@@ -22,14 +22,15 @@ Burrow brings your local library, online catalogs, series navigation, and useful
 
 ### Library
 
-- Cover grid and cover list views
+- Cover Grid and Cover List views
 - Optional automatic series folders
 - Rounded book, folder, and series covers with consistent sizing
 - Optional book, folder, and series titles under covers
 - Reading percentage and numbered series badges
-- Adjustable cover size, spacing, and grids up to 8 by 8
+- Adjustable cover size, spacing, and grids from 1 by 1 up to 8 by 8
 - Flexible top bar, hero card, page indicators, and optional labels
 - Return to Library navigation independent of automatic series grouping
+- Home and Store navigation throughout the configured library folder tree
 
 ### Store
 
@@ -39,13 +40,27 @@ Burrow brings your local library, online catalogs, series navigation, and useful
 - Book-format filtering that keeps cover images out of download choices
 - Store styling that matches the local library
 
-### Reader and Controls
+### Reading and controls
 
-- Quick Settings with optional KoSync Push and Pull actions
+- Burrow Quick Settings in File Manager and Reader
+- Optional KoSync Push and Pull actions
+- Four-way rotation with remembered orientation between library, reader, and KOReader restarts
 - Independent reader status-bar margins and preset cycling
 - Reading-location return control
-- Native top and in-reader menus
-- Light and dark mode-aware Burrow icons
+- Two-sided Reading progress footer with configurable left and right information
+- Human-readable reading-time estimates such as `1 min left in chapter` and `1 hr 12 min left in book`
+- Bionic Reading for EPUB books using real bold fixation prefixes while leaving the original EPUB untouched
+- Search in Book support while Bionic Reading is active
+- Last-used reader presentation can carry into the next book while progress, bookmarks, highlights, annotations, and reading status remain book-specific
+- Native KOReader top and in-reader menus remain available
+
+### Appearance
+
+- Optional softer black and white palette for the KOReader interface and reflowable reader pages
+- The softer palette is **off by default** and can be enabled under **Burrow Settings > Appearance**
+- Optional recoloring of small monochrome EPUB ornaments to match the softer reader palette
+- Optional proportional crop-to-fill for the current book cover on the sleep screen, without stretching or distortion
+- Light and dark mode-aware Burrow icons and menu treatments
 
 ## Compatibility
 
@@ -78,13 +93,23 @@ Burrow can check GitHub Releases directly from **Burrow Settings > About Burrow 
 - The updater keeps one previous Burrow version outside the live plugin folder so it can be restored from About Burrow if needed.
 - Temporary downloads and staging files are removed after installation and again at the next successful Burrow startup.
 
-## Release notes
+## Burrow 0.4.3
 
-Burrow 0.4.0 marks the end of the public beta period and is the first stable release.
+Burrow 0.4.3 expands the reader side of the plugin while preserving the library and Store behavior from 0.4.2.
 
-- The built-in Cover Browser must remain disabled while Burrow is active.
-- Very large cover settings may leave little space between covers on dense grids.
-- Newer KOReader releases may show a compatibility warning until they have been tested.
+Highlights include:
+
+- Bionic Reading for EPUB books
+- Last-used reading-presentation inheritance between books
+- A configurable two-sided Reading progress footer with compact time estimates
+- An optional soft black and white palette, now off by default
+- Optional recoloring for small monochrome EPUB decorative elements
+- Proportional crop-to-fill for the current book cover on the sleep screen
+- Continued updater, rotation, Quick Settings, library, series, and Store stability work from the beta cycle
+
+### Known limitation
+
+Toggling Bionic Reading can occasionally move the reading position by a few pages because real bold text changes line wrapping and pagination. Burrow uses nearby text anchoring with a percentage fallback to keep the reader close to the same passage.
 
 Please report repeatable crashes, layout problems, failed downloads, or data-loss concerns through the issue tracker.
 
