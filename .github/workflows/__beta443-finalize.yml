@@ -59,7 +59,12 @@ jobs:
         run: |
           set -euo pipefail
           base=d8f0f49e624c356cc6186419d3379df8ffbdc691
-          mapfile -t changed < <(git diff --name-only "$base" -- | sort)
+          mapfile -t changed < <(
+            {
+              git diff --name-only "$base" --
+              git ls-files --others --exclude-standard
+            } | sort -u
+          )
           expected=(
             plugins/burrow.koplugin/burrow_settings.lua
             plugins/burrow.koplugin/burrow_soft_palette_epub.lua
@@ -68,15 +73,23 @@ jobs:
             plugins/burrow.koplugin/internal_patches/2-kindle-night-sync.lua
             plugins/burrow.koplugin/internal_patches/2-zzzz-soft-palette-settings.lua
           )
+          printf 'Final changed paths (%s):\n' "${#changed[@]}"
+          printf '  %s\n' "${changed[@]}"
           test "${#changed[@]}" -eq "${#expected[@]}"
           for i in "${!expected[@]}"; do test "${changed[$i]}" = "${expected[$i]}"; done
 
-          test "$(git hash-object plugins/burrow.koplugin/burrow_settings.lua)" = 'c25406fd1871969d378a83f433bf134bb96264b0'
-          test "$(git hash-object plugins/burrow.koplugin/burrow_soft_palette_epub.lua)" = '9b36ebd42e23b10d033e813390a5934235879b6a'
-          test "$(git hash-object plugins/burrow.koplugin/burrow_version.lua)" = '64b8268b634fa175dfb219c1fe8708a10e2db527'
-          test "$(git hash-object plugins/burrow.koplugin/internal_patches/2-epub-ornaments.lua)" = '5135675dde4118f8da57867f5d7a4edf24ffb6a3'
-          test "$(git hash-object plugins/burrow.koplugin/internal_patches/2-kindle-night-sync.lua)" = '642e4e25d64bc20488a6ed093b7f335f6d332f26'
-          test "$(git hash-object plugins/burrow.koplugin/internal_patches/2-zzzz-soft-palette-settings.lua)" = '4b5caf778e62e4e0bee3652825efcf09fc7591a5'
+          check_hash() {
+            local path="$1" expected_hash="$2" actual
+            actual="$(git hash-object "$path")"
+            printf '%s  %s\n' "$actual" "$path"
+            test "$actual" = "$expected_hash"
+          }
+          check_hash plugins/burrow.koplugin/burrow_settings.lua c25406fd1871969d378a83f433bf134bb96264b0
+          check_hash plugins/burrow.koplugin/burrow_soft_palette_epub.lua 9b36ebd42e23b10d033e813390a5934235879b6a
+          check_hash plugins/burrow.koplugin/burrow_version.lua 64b8268b634fa175dfb219c1fe8708a10e2db527
+          check_hash plugins/burrow.koplugin/internal_patches/2-epub-ornaments.lua 5135675dde4118f8da57867f5d7a4edf24ffb6a3
+          check_hash plugins/burrow.koplugin/internal_patches/2-kindle-night-sync.lua 642e4e25d64bc20488a6ed093b7f335f6d332f26
+          check_hash plugins/burrow.koplugin/internal_patches/2-zzzz-soft-palette-settings.lua 4b5caf778e62e4e0bee3652825efcf09fc7591a5
 
           grep -Fq 'VERSION = "0.4.4-beta.3"' plugins/burrow.koplugin/burrow_version.lua
           grep -Fq 'DISPLAY_VERSION = "0.4.4-beta.3"' plugins/burrow.koplugin/burrow_version.lua
