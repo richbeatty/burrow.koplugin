@@ -4,6 +4,12 @@ local BurrowSettings = {}
 
 BurrowSettings.features = {
     {
+        id = "soft_palette",
+        text = _("Soft light and dark palette"),
+        help_text = _("Replace KOReader's pure white and black UI source colors with softer neutral tones. Night mode uses KOReader's native inversion."),
+        default = false,
+    },
+    {
         id = "library_visuals",
         text = _("Burrow library styling"),
         help_text = _("Rounded covers, folder styling, captions, badges, the top bar, hero card, and the expanded cover grid."),
@@ -154,10 +160,26 @@ function BurrowSettings:getModuleManifest()
             depends = { "library_core" },
         })
     end
+
+    -- Apply the shared source palette before any other early UI module builds
+    -- widgets or icons. It is its own guarded feature so a palette conflict can
+    -- be quarantined without disabling Quick Settings, the library, or reader.
+    if self:isFeatureEnabled("soft_palette") then
+        add("soft_palette", "2-soft-palette.lua", "early", {
+            filename = "2-soft-palette.lua",
+            feature = "soft_palette",
+        })
+    end
+
     if self:isFeatureEnabled("quick_settings") then
         add("quick_settings", "2-quick-settings.lua", "early", {
             filename = "2-quick-settings.lua",
             feature = "quick_settings",
+        })
+        add("quick_settings_native_night", "2-quick-settings-native-night.lua", "early", {
+            filename = "2-quick-settings-native-night.lua",
+            feature = "quick_settings",
+            depends = { "quick_settings" },
         })
     end
     if self:isFeatureEnabled("statusbar") then
@@ -185,6 +207,11 @@ function BurrowSettings:getModuleManifest()
         filename = "2-zz-burrow-settings-menu.lua",
         feature = "settings_menu",
         depends = { "library_core" },
+    })
+    add("soft_palette_settings", "2-zzzz-soft-palette-settings.lua", "instance", {
+        filename = "2-zzzz-soft-palette-settings.lua",
+        feature = "settings_menu",
+        depends = { "library_core", "settings_menu_cleanup" },
     })
 
     return modules
@@ -388,6 +415,8 @@ function BurrowSettings:removeAllSettings()
         "burrow_home_store_label_size_percent",
         "burrow_store_catalog_url",
         "burrow_store_catalog_title",
+        "burrow_bionic_reading",
+        "burrow_document_profiles",
     }
     for _, key in ipairs(keys) do
         G_reader_settings:delSetting(key)

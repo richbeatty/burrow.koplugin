@@ -117,6 +117,44 @@ BurrowLoader:loadEarlyModules()
 local Burrow = WidgetContainer:extend {
     name = "burrow",
 }
+
+-- Bionic Reading is loaded only with Burrow Quick Settings. When present, let
+-- it mark the actual ReaderUI document during DocSettingsLoad so its CRengine
+-- shadow-file hook never touches File Manager metadata/cover probes.
+local BionicReading = package.loaded["burrow.bionic_reading"]
+if type(BionicReading) == "table"
+    and type(BionicReading.attachPluginClass) == "function"
+then
+    local ok, err = pcall(BionicReading.attachPluginClass, Burrow)
+    if not ok then
+        logger.warn(burrow_debug.logprefix, "Bionic Reading reader hook could not attach", err)
+    end
+end
+
+local inheritance_ok, DocumentInheritance = pcall(
+    require,
+    "burrow_document_inheritance"
+)
+if inheritance_ok
+    and type(DocumentInheritance) == "table"
+    and type(DocumentInheritance.attachPluginClass) == "function"
+then
+    local ok, err = pcall(DocumentInheritance.attachPluginClass, Burrow)
+    if not ok then
+        logger.warn(
+            burrow_debug.logprefix,
+            "Last-used document settings hook could not attach",
+            err
+        )
+    end
+else
+    logger.warn(
+        burrow_debug.logprefix,
+        "Last-used document settings module could not load",
+        DocumentInheritance
+    )
+end
+
 Burrow._compatibility = compatibility
 Burrow._compatibility_notice = compatibility.warning
 
@@ -132,6 +170,30 @@ end
 -- Optional visual modules are preflighted and applied by feature group. A
 -- failed group is disabled without preventing unrelated Burrow features.
 BurrowLoader:applyInstanceModules(Burrow)
+
+-- Sleep-screen crop-to-fill is intentionally independent from the soft palette
+-- and library features. Keep it isolated so a device-specific screensaver
+-- failure cannot prevent Burrow from starting.
+local crop_ok, SleepCoverCrop = pcall(require, "burrow_sleep_cover_crop")
+if crop_ok
+    and type(SleepCoverCrop) == "table"
+    and type(SleepCoverCrop.apply) == "function"
+then
+    local apply_ok, applied, apply_error = pcall(SleepCoverCrop.apply, Burrow)
+    if not apply_ok or applied == false then
+        logger.warn(
+            burrow_debug.logprefix,
+            "Sleep-screen cover crop could not be applied",
+            apply_ok and apply_error or applied
+        )
+    end
+else
+    logger.warn(
+        burrow_debug.logprefix,
+        "Sleep-screen cover crop module could not load",
+        SleepCoverCrop
+    )
+end
 
 -- Older ProjectTitle and folder-cover builds may leave a generated collage in
 -- an entry's pt_cover_path/burrow_cover_path field. That is cache artwork, not

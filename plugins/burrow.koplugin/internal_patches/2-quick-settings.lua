@@ -17,6 +17,21 @@ function Module.apply()
 -- rounded tab highlights, and a rounded bottom footer.
 -- Remove any other copy of 2-quick-settings.lua before installing this file.
 
+local logger = require("logger")
+local BionicReading
+do
+    local ok, module_or_error = pcall(require, "burrow_bionic_reading")
+    if ok and type(module_or_error) == "table" then
+        local apply_ok, apply_result = pcall(module_or_error.apply)
+        if apply_ok and apply_result ~= false then
+            BionicReading = module_or_error
+        else
+            logger.warn("[Burrow] Bionic Reading disabled; initialization failed", apply_result)
+        end
+    else
+        logger.warn("[Burrow] Bionic Reading disabled; module failed to load", module_or_error)
+    end
+end
 local BD = require("ui/bidi")
 local Blitbuffer = require("ffi/blitbuffer")
 local Button = require("ui/widget/button")
@@ -199,6 +214,21 @@ local function saveConfig()
     G_reader_settings:saveSetting(CONFIG_KEY, config)
 end
 
+-- Bionic Reading is a fixed Reader Controls action, not a configurable
+-- Reader button. Remove configuration residue from earlier test overlays.
+local removed_legacy_bionic = false
+for index = #config.reader_order, 1, -1 do
+    if config.reader_order[index] == "bionic" then
+        table.remove(config.reader_order, index)
+        removed_legacy_bionic = true
+    end
+end
+if config.reader_buttons and config.reader_buttons.bionic ~= nil then
+    config.reader_buttons.bionic = nil
+    removed_legacy_bionic = true
+end
+if removed_legacy_bionic then saveConfig() end
+
 local function isReaderContext()
     local ok, ReaderUI = pcall(require, "apps/reader/readerui")
     return ok and ReaderUI.instance ~= nil
@@ -235,6 +265,19 @@ local button_defs = {
         label = _("Text"),
         reader = true,
         callback = function(menu) closeAndBroadcast(menu, "ShowConfigMenu") end,
+    },
+    bionic = {
+        icon = "quick_bionic",
+        label = _("Bionic"),
+        reader = true,
+        active_func = function()
+            return BionicReading and BionicReading.isEnabled() or false
+        end,
+        callback = function(touch_menu)
+            if BionicReading then
+                BionicReading.toggleFromQuickSettings(touch_menu)
+            end
+        end,
     },
     book_info = {
         icon = "quick_info",
@@ -366,12 +409,23 @@ local function visibleButtonEntries()
     local order = reader and config.reader_order or config.filemanager_order
     local enabled = reader and config.reader_buttons or config.filemanager_buttons
     local entries = {}
+    local bionic_inserted = false
+
     for _, id in ipairs(order) do
         local def = button_defs[id]
         local context_ok = def and not ((def.reader and not reader) or (def.filemanager and reader))
         if def and context_ok and enabled[id] then
             table.insert(entries, { id = id, def = def })
         end
+
+        if reader and BionicReading and id == "text" and not bionic_inserted then
+            table.insert(entries, { id = "bionic", def = button_defs.bionic })
+            bionic_inserted = true
+        end
+    end
+
+    if reader and BionicReading and not bionic_inserted then
+        table.insert(entries, { id = "bionic", def = button_defs.bionic })
     end
     return entries
 end

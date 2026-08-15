@@ -4,6 +4,39 @@ All notable changes to Burrow will be documented here.
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-08-14
+
+### Added
+
+- Added Bionic Reading for EPUB books with real bold fixation prefixes and cached shadow-EPUB rendering so original books remain untouched
+- Added Search in Book compatibility and nearby semantic text anchoring for Bionic Reading
+- Added last-used reader-presentation inheritance between books while keeping progress, bookmarks, highlights, annotations, reading status, stylesheet selection, and typography-language data book-specific
+- Added an optional softer black and white palette for the KOReader interface and reflowable reader pages
+- Added optional recoloring of small monochrome EPUB ornaments to match the soft reader palette while leaving covers, large images, and colored artwork unchanged
+- Added a configurable two-sided Reading progress footer with separate left/right content, bottom inset, and horizontal inset controls
+- Added proportional crop-to-fill for the current book cover on the sleep screen without stretching or distortion
+
+### Changed
+
+- Reader Controls opens Burrow Quick Settings as a standalone top panel instead of automatically opening KOReader's bottom Text/Config panel underneath it
+- Reading-time values in Burrow's split footer now use compact human-readable wording such as `1 min` and `1 hr 12 min`
+- The softer black and white palette is now opt-in and defaults off when no preference has been saved; explicit enabled or disabled choices are preserved
+
+### Fixed
+
+- Prevented Bionic Reading initialization failures from quarantining unrelated Quick Settings behavior
+- Preserved Search in Book behavior across Bionic inline text-node boundaries
+- Prevented unresolved normal-DOM XPointers from sending Bionic Reading back to the beginning of the book
+- Stabilized the Reading progress footer lifecycle, placement, and Burrow Settings controls
+- Removed duplicate Quick Settings button IDs left behind by earlier test builds
+- Hid inactive soft-palette pager boundary chevrons without changing unrelated KOReader menus
+- Kept the sleep-cover crop control in Burrow Settings > Appearance without modifying KOReader's native menu builders
+
+### Known limitation
+
+- Toggling Bionic Reading can occasionally move a few pages because real bold changes line wrapping and pagination; Burrow uses nearby semantic text anchoring with percentage fallback to keep the reader close to the same text
+
+
 ## [0.4.2] - 2026-08-13
 
 ### Added
@@ -276,7 +309,8 @@ All notable changes to Burrow will be documented here.
 
 - Initial unified Burrow library, Store, and reader-interface package
 
-[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.4.3...HEAD
+[0.4.3]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.4.3
 [0.4.2]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.4.2
 [0.4.2-beta.11]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.4.2-beta.11
 [0.4.2-beta.10]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.4.2-beta.10

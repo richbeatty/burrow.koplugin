@@ -918,6 +918,23 @@ function Methods:addToMainMenu(menu_items)
         sub_item_table = feature_items,
     })
     table.insert(sub_item_table, {
+        text = _("Crop sleep-screen book cover to fill"),
+        help_text = _("Scale the current book cover proportionally until the sleep screen is completely filled, then crop the excess from the edges without stretching it."),
+        _burrow_sleep_cover_crop_setting = true,
+        checked_func = function()
+            return G_reader_settings:isTrue("burrow_screensaver_crop_cover_to_fill")
+        end,
+        callback = function()
+            G_reader_settings:saveSetting(
+                "burrow_screensaver_crop_cover_to_fill",
+                not G_reader_settings:isTrue("burrow_screensaver_crop_cover_to_fill")
+            )
+            if type(G_reader_settings.flush) == "function" then
+                G_reader_settings:flush()
+            end
+        end,
+    })
+    table.insert(sub_item_table, {
         text = _("About Burrow"),
         help_text = _("Version, license, and acknowledgements."),
         keep_menu_open = true,
