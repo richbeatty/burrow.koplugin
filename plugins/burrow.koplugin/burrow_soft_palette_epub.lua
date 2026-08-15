@@ -7,17 +7,39 @@ local logger = require("logger")
 local util = require("util")
 
 local Epub = {
-    CACHE_VERSION = "ornaments-v4-native-grayscale",
+    CACHE_VERSION = "ornaments-v5-explicit-night",
 }
 
 local PALETTES = {
     ["pure-light"] = {
         dark = { 0x00, 0x00, 0x00 },
         light = { 0xFF, 0xFF, 0xFF },
+        force_rgb = false,
+    },
+    ["pure-night"] = {
+        -- Keep a two-level blue-channel offset across the entire grayscale
+        -- ramp. CRengine treats any r/g/b mismatch as a color pixel and
+        -- pre-inverts it in Night Mode, so the final Kindle framebuffer
+        -- inversion restores these explicit night colors instead of flipping
+        -- them back to the light palette. The offset is visually neutral on
+        -- grayscale e-ink and negligible on color screens.
+        dark = { 0xFD, 0xFD, 0xFF },
+        light = { 0x00, 0x00, 0x02 },
+        force_rgb = true,
     },
     ["soft-light"] = {
         dark = { 0x20, 0x20, 0x20 },
         light = { 0xF2, 0xF2, 0xF2 },
+        force_rgb = false,
+    },
+    ["soft-night"] = {
+        -- Match Burrow's native-inverted soft page background (#0D0D0F) and
+        -- near-#DFDFDF foreground while retaining the tiny RGB distinction
+        -- CRengine needs to preserve the explicit night image through the
+        -- final hardware/page inversion.
+        dark = { 0xDF, 0xDF, 0xE1 },
+        light = { 0x0D, 0x0D, 0x0F },
+        force_rgb = true,
     },
 }
 
@@ -282,6 +304,10 @@ local function recolorRaster(content, media, tempBase, palette)
         -- grayscale JPEG (TJSAMP_GRAY), guaranteeing r == g == b when
         -- CRengine decodes them. They will then follow the page naturally.
         local bbdump, components = out:getBufferData()
+        local jpeg_quality = palette.force_rgb and 100 or 95
+        local jpeg_subsample = palette.force_rgb
+            and ffi.C.TJSAMP_444
+            or ffi.C.TJSAMP_GRAY
         local call_ok, encoded, encode_err = pcall(
             Jpeg.encodeToFile,
             tempPath,
@@ -289,9 +315,9 @@ local function recolorRaster(content, media, tempBase, palette)
             bbdump.w,
             bbdump.h,
             components,
-            95,
+            jpeg_quality,
             bbdump.stride,
-            ffi.C.TJSAMP_GRAY
+            jpeg_subsample
         )
         if bbdump ~= out then pcall(bbdump.free, bbdump) end
         write_ok = call_ok and encoded ~= false
@@ -675,7 +701,7 @@ function Epub.generate(sourcePath, targetPath, paletteName)
         return false, "Could not finalize decorative EPUB cache: " .. tostring(err)
     end
 
-    logger.info("[Burrow ornaments] Built grayscale ornament cache", paletteName, recolored)
+    logger.info("[Burrow ornaments] Built explicit ornament palette cache", paletteName, recolored)
     return true, recolored
 end
 
