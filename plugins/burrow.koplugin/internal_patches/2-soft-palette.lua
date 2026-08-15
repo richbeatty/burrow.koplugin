@@ -19,7 +19,6 @@ function Module.apply()
     local CreDocument = require("document/credocument")
     local ImageWidget = require("ui/widget/imagewidget")
     local ReaderStyleTweak = require("apps/reader/modules/readerstyletweak")
-    local SoftPaletteEpub = require("burrow_soft_palette_epub")
     local logger = require("logger")
     local userpatch = require("userpatch")
 
@@ -27,7 +26,6 @@ function Module.apply()
     local BLACK_DEFAULT = 0x00
     local WHITE_SOFT = 0xF2
     local BLACK_SOFT = 0x20
-    local ORNAMENT_SETTING = "burrow_soft_palette_recolor_ornaments"
 
     local current_white = tonumber(Blitbuffer.COLOR_WHITE.a)
     local current_black = tonumber(Blitbuffer.COLOR_BLACK.a)
@@ -81,53 +79,6 @@ body {
     local function hasUserReaderPalette()
         return G_reader_settings:has("cre_background_color")
             or G_reader_settings:has("cre_background_image")
-    end
-
-    local function isEpub(path)
-        return type(path) == "string" and path:lower():match("%.epub$") ~= nil
-    end
-
-    -- Optional Kindle-like treatment for small monochrome EPUB artwork. Rather
-    -- than recoloring CRengine's final framebuffer, build a cached shadow EPUB
-    -- where only conservative ornament candidates have #000/#FFF mapped to the
-    -- same #202020/#F2F2F0 palette as the page. Large and colored images remain
-    -- byte-for-byte original. The reader-context marker prevents file-browser
-    -- cover and metadata probes from ever being redirected through this cache.
-    if not CreDocument._burrow_soft_palette_ornament_loader_v1 then
-        CreDocument._burrow_soft_palette_ornament_loader_v1 = true
-        local originalLoadDocument = CreDocument.loadDocument
-
-        function CreDocument:loadDocument(fullDocument)
-            if self._loaded
-                or fullDocument == false
-                or (self._burrow_soft_palette_reader_context ~= true
-                    and self._burrow_bionic_reader_context ~= true)
-                or not G_reader_settings:isTrue(ORNAMENT_SETTING)
-                or hasUserReaderPalette()
-                or not isEpub(self.file)
-            then
-                return originalLoadDocument(self, fullDocument)
-            end
-
-            local originalFile = self.file
-            local shadow, shadowErr = SoftPaletteEpub.ensureCache(originalFile)
-            if not shadow then
-                logger.warn("[Burrow palette] Falling back to original EPUB", shadowErr)
-                return originalLoadDocument(self, fullDocument)
-            end
-
-            self.file = shadow
-            local ok, result = pcall(originalLoadDocument, self, fullDocument)
-            self.file = originalFile
-            if not ok then error(result) end
-
-            if result then
-                self._burrow_soft_palette_ornaments_active = true
-                self._burrow_soft_palette_shadow_file = shadow
-                logger.info("[Burrow palette] Loaded ornament-adjusted EPUB")
-            end
-            return result
-        end
     end
 
     if not CreDocument._burrow_soft_palette_v5 then
