@@ -72,6 +72,6 @@ p.write_text(s, encoding='utf-8')
 # 6. Version this as the first beta after 0.4.3 stable.
 p = Path('plugins/burrow.koplugin/burrow_version.lua')
 s = p.read_text(encoding='utf-8')
-s = replace_once(s, '    VERSION = "0.4.3"\n', '    VERSION = "0.4.4-beta.1"\n', 'version')
-s = replace_once(s, '    DISPLAY_VERSION = "0.4.3"\n', '    DISPLAY_VERSION = "0.4.4-beta.1"\n', 'display version')
+s = replace_once(s, '    VERSION = "0.4.3",\n', '    VERSION = "0.4.4-beta.1",\n', 'version')
+s = replace_once(s, '    DISPLAY_VERSION = "0.4.3",\n', '    DISPLAY_VERSION = "0.4.4-beta.1",\n', 'display version')
 p.write_text(s, encoding='utf-8')
