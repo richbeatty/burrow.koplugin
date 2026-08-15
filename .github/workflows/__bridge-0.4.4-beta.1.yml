@@ -1,0 +1,144 @@
+name: Bridge reviewed 0.4.4-beta.1 onto beta history
+
+on:
+  push:
+    branches:
+      - agent/0.4.4-beta.1-publish
+    paths:
+      - '.github/workflows/__bridge-0.4.4-beta.1.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  bridge:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out beta publish branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Guard exact source trees
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          beta11=58ad3cd445c55281d1eab919ba8dcbea33fb05b0
+          stable=0c93f93cc69de3ef630e0fd92bcd880c4a16b588
+          candidate=e2d51f9c613de20cf5c2d709a7cd6301892baad7
+
+          git fetch origin main agent/self-updater agent/0.4.4-beta.1-selective-ornaments
+
+          test "$(git rev-parse origin/agent/self-updater)" = "$beta11"
+          test "$(git rev-parse origin/main)" = "$stable"
+          test "$(git rev-parse origin/agent/0.4.4-beta.1-selective-ornaments)" = "$candidate"
+          test "$(git merge-base HEAD "$beta11")" = "$beta11"
+
+          # Before bridging, this branch must differ from beta.11 only by this
+          # self-removing workflow.
+          changed="$(git diff --name-only "$beta11" HEAD | sort)"
+          expected='.github/workflows/__bridge-0.4.4-beta.1.yml'
+          test "$changed" = "$expected"
+
+          # Stable 0.4.3 was intentionally the tested beta.11 runtime plus only
+          # release documentation, the opt-in soft-palette default, and version.
+          stable_delta="$(git diff --name-only "$beta11" "$stable" | sort)"
+          expected_stable_delta="$(printf '%s\n' \
+            CHANGELOG.md \
+            README.md \
+            plugins/burrow.koplugin/burrow_settings.lua \
+            plugins/burrow.koplugin/burrow_version.lua | sort)"
+          test "$stable_delta" = "$expected_stable_delta"
+
+          # The reviewed candidate itself must still be exactly six runtime
+          # files beyond stable. Refuse to bridge anything else.
+          candidate_delta="$(git diff --name-only "$stable" "$candidate" | sort)"
+          expected_candidate_delta="$(printf '%s\n' \
+            plugins/burrow.koplugin/burrow_settings.lua \
+            plugins/burrow.koplugin/burrow_soft_palette_epub.lua \
+            plugins/burrow.koplugin/burrow_version.lua \
+            plugins/burrow.koplugin/internal_patches/2-epub-ornaments.lua \
+            plugins/burrow.koplugin/internal_patches/2-soft-palette.lua \
+            plugins/burrow.koplugin/internal_patches/2-zzzz-soft-palette-settings.lua | sort)"
+          test "$candidate_delta" = "$expected_candidate_delta"
+
+      - name: Copy exact reviewed runtime and stable docs
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          stable=0c93f93cc69de3ef630e0fd92bcd880c4a16b588
+          candidate=e2d51f9c613de20cf5c2d709a7cd6301892baad7
+
+          # Copy the WHOLE plugin directory from the already reviewed candidate,
+          # not selected snippets. This makes the publish runtime tree identical.
+          git checkout "$candidate" -- plugins/burrow.koplugin
+
+          # Carry forward the clean stable README/changelog rather than the old
+          # prerelease documentation history.
+          git checkout "$stable" -- README.md CHANGELOG.md
+
+          rm .github/workflows/__bridge-0.4.4-beta.1.yml
+
+      - name: Validate exact publish tree
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          beta11=58ad3cd445c55281d1eab919ba8dcbea33fb05b0
+          stable=0c93f93cc69de3ef630e0fd92bcd880c4a16b588
+          candidate=e2d51f9c613de20cf5c2d709a7cd6301892baad7
+
+          sudo apt-get update
+          sudo apt-get install -y lua5.1
+
+          while IFS= read -r -d '' file; do
+            luac5.1 -p "$file"
+          done < <(find plugins/burrow.koplugin -type f -name '*.lua' -print0)
+
+          git diff --check
+          test ! -e .github/workflows/__bridge-0.4.4-beta.1.yml
+
+          # Strongest runtime assertion: the entire plugin tree must be
+          # byte-for-byte identical to the reviewed candidate.
+          git diff --exit-code "$candidate" -- plugins/burrow.koplugin
+
+          # Documentation must be byte-for-byte the clean 0.4.3 stable docs.
+          git diff --exit-code "$stable" -- README.md CHANGELOG.md
+
+          grep -q 'VERSION = "0.4.4-beta.1"' plugins/burrow.koplugin/burrow_version.lua
+          grep -q 'DISPLAY_VERSION = "0.4.4-beta.1"' plugins/burrow.koplugin/burrow_version.lua
+          grep -A4 'id = "soft_palette"' plugins/burrow.koplugin/burrow_settings.lua | grep -q 'default = false'
+          grep -q 'add("epub_ornaments"' plugins/burrow.koplugin/burrow_settings.lua
+          test -f plugins/burrow.koplugin/internal_patches/2-epub-ornaments.lua
+
+          # Preserve the safety boundaries established during feature review.
+          ! grep -Eq 'ReaderMenu|FileManagerMenu|setUpdateItemTable|mergeAndSort' plugins/burrow.koplugin/internal_patches/2-epub-ornaments.lua
+          grep -q 'DeviceListener._burrow_epub_ornament_night_hook_v1' plugins/burrow.koplugin/internal_patches/2-epub-ornaments.lua
+          grep -q 'CreDocument._burrow_epub_ornament_image_mode_hook_v1' plugins/burrow.koplugin/internal_patches/2-epub-ornaments.lua
+          grep -q 'document._burrow_epub_ornaments_active ~= true' plugins/burrow.koplugin/internal_patches/2-epub-ornaments.lua
+
+          # Expected beta.11 -> beta.1 tree delta. Nothing else may hitch a ride.
+          changed="$({ git diff --name-only "$beta11"; git ls-files --others --exclude-standard; } | sort -u)"
+          expected="$(printf '%s\n' \
+            CHANGELOG.md \
+            README.md \
+            plugins/burrow.koplugin/burrow_settings.lua \
+            plugins/burrow.koplugin/burrow_soft_palette_epub.lua \
+            plugins/burrow.koplugin/burrow_version.lua \
+            plugins/burrow.koplugin/internal_patches/2-epub-ornaments.lua \
+            plugins/burrow.koplugin/internal_patches/2-soft-palette.lua \
+            plugins/burrow.koplugin/internal_patches/2-zzzz-soft-palette-settings.lua | sort)"
+          test "$changed" = "$expected"
+
+      - name: Commit exact beta publish candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Burrow 0.4.4-beta.1 selective dark-mode ornaments"
+          git push origin HEAD:agent/0.4.4-beta.1-publish
