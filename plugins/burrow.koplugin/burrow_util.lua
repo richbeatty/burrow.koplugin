@@ -202,10 +202,33 @@ function burrow_util.installIcons()
     end
 
     if copied_any then
-        -- IconWidget caches resolved paths when first required. Clearing these
-        -- two module entries lets later Burrow modules see newly installed icons.
-        package.loaded["ui/widget/iconwidget"] = nil
-        package.loaded["ui/widget/iconbutton"] = nil
+        -- KOReader builds its user-icon search list when IconWidget is first
+        -- required. On a clean Burrow install the user icons directory may not
+        -- exist yet at that point. Patch the already-loaded IconWidget class so
+        -- future widgets immediately prefer the newly installed user icons.
+        -- This also bypasses any stock icon path cached earlier in the session.
+        local IconWidget = package.loaded["ui/widget/iconwidget"]
+        if type(IconWidget) == "table"
+            and type(IconWidget.init) == "function"
+            and not IconWidget._burrow_user_icon_lookup then
+            local original_icon_init = IconWidget.init
+            function IconWidget:init(...)
+                if not self.image and not self.file and type(self.icon) == "string" then
+                    local svg = target_dir .. "/" .. self.icon .. ".svg"
+                    if lfs.attributes(svg, "mode") == "file" then
+                        self.file = svg
+                        return
+                    end
+                    local png = target_dir .. "/" .. self.icon .. ".png"
+                    if lfs.attributes(png, "mode") == "file" then
+                        self.file = png
+                        return
+                    end
+                end
+                return original_icon_init(self, ...)
+            end
+            IconWidget._burrow_user_icon_lookup = true
+        end
     end
 
     for _, name in ipairs(expected) do

@@ -37,7 +37,6 @@ Burrow brings your local library, online catalogs, series navigation, and useful
 - Browse OPDS catalogs in list or cover-grid views
 - Download books directly into your library
 - Download queue available from every catalog
-- Book-format filtering that keeps cover images out of download choices
 - Store styling that matches the local library
 
 ### Reading and controls
@@ -50,8 +49,8 @@ Burrow brings your local library, online catalogs, series navigation, and useful
 - Two-sided Reading progress footer with configurable left and right information
 - Human-readable reading-time estimates such as `1 min left in chapter` and `1 hr 12 min left in book`
 - Bionic Reading for EPUB books using real bold fixation prefixes while leaving the original EPUB untouched
-- Search in Book support while Bionic Reading is active
-- Last-used reader presentation can carry into the next book while progress, bookmarks, highlights, annotations, and reading status remain book-specific
+- Search in Book support
+- Last-used reader presentation can carry into the next book 
 - Native KOReader top and in-reader menus remain available
 
 ### Appearance
@@ -93,19 +92,6 @@ Burrow can check GitHub Releases directly from **Burrow Settings > About Burrow 
 - The updater keeps one previous Burrow version outside the live plugin folder so it can be restored from About Burrow if needed.
 - Temporary downloads and staging files are removed after installation and again at the next successful Burrow startup.
 
-## Burrow 0.4.3
-
-Burrow 0.4.3 expands the reader side of the plugin while preserving the library and Store behavior from 0.4.2.
-
-Highlights include:
-
-- Bionic Reading for EPUB books
-- Last-used reading-presentation inheritance between books
-- A configurable two-sided Reading progress footer with compact time estimates
-- An optional soft black and white palette, now off by default
-- Optional recoloring for small monochrome EPUB decorative elements
-- Proportional crop-to-fill for the current book cover on the sleep screen
-- Continued updater, rotation, Quick Settings, library, series, and Store stability work from the beta cycle
 
 ### Known limitation
 
