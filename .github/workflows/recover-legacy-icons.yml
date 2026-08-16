@@ -1,0 +1,41 @@
+name: Recover legacy Burrow icons
+
+on:
+  push:
+    branches:
+      - agent/0.4.5-beta.1-reader-icons
+
+permissions:
+  contents: write
+
+jobs:
+  recover:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Recover SVG assets from legacy package
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f Burrow-0.2.1-alpha.zip
+          unzip -l Burrow-0.2.1-alpha.zip > legacy-archive-list.txt
+          rm -rf legacy-extracted-svgs
+          python3 - <<'PY'
+          import os, zipfile
+          src = 'Burrow-0.2.1-alpha.zip'
+          out = 'legacy-extracted-svgs'
+          with zipfile.ZipFile(src) as z:
+              for name in z.namelist():
+                  if name.lower().endswith('.svg'):
+                      target = os.path.join(out, name.lstrip('/'))
+                      os.makedirs(os.path.dirname(target), exist_ok=True)
+                      with z.open(name) as rf, open(target, 'wb') as wf:
+                          wf.write(rf.read())
+          PY
+          rm Burrow-0.2.1-alpha.zip
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "Inspect legacy Burrow icon assets" || exit 0
+          git push
