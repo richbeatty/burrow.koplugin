@@ -37,7 +37,9 @@ function Module.apply()
         return false, "Could not locate Quick Settings Night action"
     end
 
+    local Device = require("device")
     local Event = require("ui/event")
+    local TouchMenu = require("ui/widget/touchmenu")
     local UIManager = require("ui/uimanager")
 
     button_defs.night.callback = function(touch_menu)
@@ -45,6 +47,13 @@ function Module.apply()
         -- inversion, CRengine cache reset, highlight refresh, persistence and
         -- the repaint as one coordinated Night Mode transition.
         UIManager:broadcastEvent(Event:new("ToggleNightMode"))
+
+        -- Kindle e-ink refreshes are slow enough that immediately rebuilding the
+        -- entire custom Quick Settings panel can leave the visible panel behind
+        -- its live hitboxes for a moment. Do not rebuild it during that refresh.
+        -- The Night tile's active appearance will be correct the next time the
+        -- menu is opened. Other devices retain the existing next-tick refresh.
+        if Device:isKindle() then return end
 
         UIManager:nextTick(function()
             if touch_menu
@@ -54,6 +63,34 @@ function Module.apply()
                 touch_menu:updateItems(1)
             end
         end)
+    end
+
+    -- Burrow's custom panel normally checks its tile hitboxes before KOReader's
+    -- stock outside-menu close handler. On a slow Kindle Night Mode refresh, a
+    -- tap intended for the empty area below Quick Settings can therefore be
+    -- interpreted against stale tile geometry. Give outside taps absolute
+    -- priority and consume them after closing the menu.
+    if not TouchMenu._burrow_qs_outside_tap_priority then
+        TouchMenu._burrow_qs_outside_tap_priority = true
+        local original_onTapCloseAllMenus = TouchMenu.onTapCloseAllMenus
+
+        function TouchMenu:onTapCloseAllMenus(arg, ges_ev)
+            if self._rounded_qs_refs
+                and self.item_table
+                and self.item_table.panel
+                and self.dimen
+                and ges_ev
+                and ges_ev.pos
+                and ges_ev.pos:notIntersectWith(self.dimen)
+            then
+                self:closeMenu()
+                return true
+            end
+
+            if original_onTapCloseAllMenus then
+                return original_onTapCloseAllMenus(self, arg, ges_ev)
+            end
+        end
     end
 
     Module.applied = true
