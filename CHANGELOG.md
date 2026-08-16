@@ -4,6 +4,13 @@ All notable changes to Burrow will be documented here.
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-08-16
+
+### Fixed
+
+- Restored the custom Burrow app-bar icon set used by older installations.
+- Made newly installed user icons available to KOReader during the same first session instead of requiring an extra restart.
+
 ## [0.4.3] - 2026-08-14
 
 ### Added
