@@ -887,10 +887,35 @@ function FileManagerMenu:setUpdateItemTable()
     if self.tab_item_table then addTabOnce(self.tab_item_table) end
 end
 
+-- Keep Burrow's reader-toolbar glyphs scoped to the Reader menu instead of
+-- overwriting KOReader's global appbar icon names. Reuse the same light,
+-- rounded 1.8-stroke family as Reader Controls so a fresh Burrow install
+-- has one coherent visual language while unrelated KOReader screens keep
+-- their own theme/user icons.
+local reader_tab_icon_map = {
+    ["appbar.navigation"] = "quick_toc",
+    ["appbar.typeset"] = "quick_text",
+    ["appbar.settings"] = "burrow.reader.settings",
+    ["appbar.tools"] = "burrow.reader.tools",
+    ["appbar.search"] = "quick_search",
+    ["appbar.filebrowser"] = "quick_library",
+    ["appbar.menu"] = "quick_more",
+}
+
+local function applyReaderTabIcons(tab_table)
+    for _, tab in ipairs(tab_table or {}) do
+        local replacement = reader_tab_icon_map[tab.icon]
+        if replacement then tab.icon = replacement end
+    end
+end
+
 local original_reader_setUpdateItemTable = ReaderMenu.setUpdateItemTable
 function ReaderMenu:setUpdateItemTable()
     original_reader_setUpdateItemTable(self)
-    if self.tab_item_table then addTabOnce(self.tab_item_table) end
+    if self.tab_item_table then
+        applyReaderTabIcons(self.tab_item_table)
+        addTabOnce(self.tab_item_table)
+    end
 end
 
     Module.applied = true

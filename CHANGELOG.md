@@ -4,6 +4,14 @@ All notable changes to Burrow will be documented here.
 
 ## [Unreleased]
 
+## [0.4.5-beta.1] - 2026-08-16
+
+### Changed
+
+- Replaced the stock Reader top-menu tab glyphs with Burrow-scoped icons that match the Reader Controls visual style without overwriting KOReader or user-theme appbar icons
+- Reused Burrow's existing Contents, Text, Search, Library, and More glyphs and added matching Settings and Tools glyphs
+
+
 ## [0.4.3] - 2026-08-14
 
 ### Added
