@@ -161,6 +161,14 @@ function BurrowSettings:getModuleManifest()
         })
     end
 
+    -- Kindle can preserve a stale hardware inversion flag across a KOReader
+    -- restart even when KOReader's logical Night Mode is light. Synchronize the
+    -- Kindle-only hardware flag before any Burrow palette/UI early module paints.
+    add("kindle_night_sync", "2-kindle-night-sync.lua", "early", {
+        filename = "2-kindle-night-sync.lua",
+        feature = "kindle_night_sync",
+    })
+
     -- Apply the shared source palette before any other early UI module builds
     -- widgets or icons. It is its own guarded feature so a palette conflict can
     -- be quarantined without disabling Quick Settings, the library, or reader.
@@ -170,6 +178,14 @@ function BurrowSettings:getModuleManifest()
             feature = "soft_palette",
         })
     end
+
+    -- Selective decorative EPUB handling is independent of the optional
+    -- soft palette. Load it before Quick Settings so its CreDocument wrapper
+    -- stays inside Bionic Reading's later shadow-file wrapper.
+    add("epub_ornaments", "2-epub-ornaments.lua", "early", {
+        filename = "2-epub-ornaments.lua",
+        feature = "epub_ornaments",
+    })
 
     if self:isFeatureEnabled("quick_settings") then
         add("quick_settings", "2-quick-settings.lua", "early", {

@@ -118,6 +118,24 @@ local Burrow = WidgetContainer:extend {
     name = "burrow",
 }
 
+-- Decorative EPUB palettes need to observe Night Mode only after KOReader's
+-- native DeviceListener has completed the transition. Burrow plugin instances
+-- are registered after DeviceListener, so attach the observer to Burrow itself
+-- instead of wrapping KOReader's Night Mode owner.
+local OrnamentModule = package.loaded["burrow.internal.2_epub_ornaments"]
+if type(OrnamentModule) == "table"
+    and type(OrnamentModule.attachPluginClass) == "function"
+then
+    local ok, err = pcall(OrnamentModule.attachPluginClass, Burrow)
+    if not ok then
+        logger.warn(
+            burrow_debug.logprefix,
+            "Decorative EPUB Night Mode observer could not attach",
+            err
+        )
+    end
+end
+
 -- Bionic Reading is loaded only with Burrow Quick Settings. When present, let
 -- it mark the actual ReaderUI document during DocSettingsLoad so its CRengine
 -- shadow-file hook never touches File Manager metadata/cover probes.

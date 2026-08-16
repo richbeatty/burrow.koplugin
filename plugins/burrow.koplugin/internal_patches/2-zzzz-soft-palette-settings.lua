@@ -27,10 +27,10 @@ function Module.apply(plugin)
 
     local ORNAMENT_SETTING = "burrow_soft_palette_recolor_ornaments"
 
-    -- Mark the real reader CreDocument before CRengine loads it. The soft
-    -- palette EPUB shadow loader checks this marker so file-browser cover and
-    -- metadata probes are never redirected through a transformed copy. Keep
-    -- this wrapper composable with Bionic Reading and the other Burrow hooks.
+    -- Mark the real reader CreDocument before CRengine loads it. The
+    -- decorative EPUB shadow loader checks this marker so file-browser cover
+    -- and metadata probes are never redirected through a transformed copy.
+    -- Keep this wrapper composable with Bionic Reading and other Burrow hooks.
     if not plugin._burrow_soft_palette_reader_context_hook then
         plugin._burrow_soft_palette_reader_context_hook = true
         local originalDocSettingsLoad = plugin.onDocSettingsLoad
@@ -41,15 +41,16 @@ function Module.apply(plugin)
             end
             local doc = document or self.document or (self.ui and self.ui.document)
             if doc and doc.provider == "crengine" then
+                doc._burrow_epub_ornament_reader_context = true
+                -- Retain the old marker for same-process upgrade compatibility.
                 doc._burrow_soft_palette_reader_context = true
             end
             return result
         end
     end
 
-    -- This is an experimental test overlay. Turn the new ornament treatment on
-    -- for first-time testers so reopening an EPUB immediately exercises it.
-    -- The setting remains independently switchable in Burrow Settings.
+    -- Preserve the existing default and every saved user choice. Decorative
+    -- EPUB handling now works independently of the optional soft palette.
     if G_reader_settings:readSetting(ORNAMENT_SETTING) == nil then
         G_reader_settings:saveSetting(ORNAMENT_SETTING, true)
     end
@@ -346,11 +347,10 @@ function Module.apply(plugin)
                     },
                     {
                         text = _("Recolor decorative book elements"),
-                        help_text = _("For EPUB books, recolor only small monochrome images and simple SVG ornaments to match Burrow's soft page colors. Covers, large images, and colored artwork are left unchanged. Reopen the book after changing this setting."),
+                        help_text = _("Normalize qualifying small monochrome EPUB decorations to true grayscale so KOReader's native Night Mode inversion can follow the page. Covers, photographs, colored artwork, and other images keep KOReader's normal image behavior. Reopen the book after changing this setting."),
                         checked_func = function()
                             return G_reader_settings:isTrue(ORNAMENT_SETTING)
                         end,
-                        enabled_func = enabled,
                         callback = function()
                             G_reader_settings:saveSetting(
                                 ORNAMENT_SETTING,
