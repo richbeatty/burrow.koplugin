@@ -6,7 +6,6 @@ on:
     branches:
       - main
       - agent/self-updater
-      - agent/0.4.6-beta.1-stable-page-numbers
     paths:
       - 'README.md'
       - 'INSTALL.txt'
