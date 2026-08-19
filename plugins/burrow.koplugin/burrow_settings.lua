@@ -147,6 +147,16 @@ function BurrowSettings:getModuleManifest()
         visual("cover_layout", "2-z-burrow-cover-layout.lua", {
             "library_core", "rounded_covers", "folder_consistency",
         })
+
+        -- Keep the hero border aligned to the actual outer cover edges after
+        -- final cover sizing and gap reduction have been applied. This is an
+        -- isolated non-critical layer so a geometry mismatch cannot quarantine
+        -- Burrow's core library styling.
+        add("hero_grid_alignment", "2-hero-card-grid-alignment.lua", "instance", {
+            filename = "2-hero-card-grid-alignment.lua",
+            feature = "hero_grid_alignment",
+            depends = { "library_core", "hero_card", "cover_layout" },
+        })
     else
         -- Series grouping and Return to Library remain available without Burrow's
         -- visual styling, but when styling is enabled they must load after the
