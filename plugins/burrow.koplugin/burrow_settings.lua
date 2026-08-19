@@ -187,6 +187,16 @@ function BurrowSettings:getModuleManifest()
         feature = "epub_ornaments",
     })
 
+    -- Prefer layout-independent page labels for reflowable books. Publisher
+    -- page maps win when the document provides them; otherwise Burrow builds
+    -- KOReader's native synthetic map (1500 chars/page unless the user already
+    -- selected a different value). The footer and Reading Location already
+    -- consume these labels when page maps are active.
+    add("stable_page_numbers", "2-stable-page-numbers.lua", "early", {
+        filename = "2-stable-page-numbers.lua",
+        feature = "stable_page_numbers",
+    })
+
     if self:isFeatureEnabled("quick_settings") then
         add("quick_settings", "2-quick-settings.lua", "early", {
             filename = "2-quick-settings.lua",
