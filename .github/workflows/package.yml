@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - agent/self-updater
+      - agent/0.4.6-beta.2-hero-grid-alignment
     paths:
       - 'README.md'
       - 'INSTALL.txt'
