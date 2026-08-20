@@ -2,7 +2,7 @@ name: Validate Burrow
 
 on:
   push:
-    branches: [main, agent/0.4.6-beta.4-hero-spacing-description]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
