@@ -78,11 +78,12 @@ local function patchHeroSizeAndContrast(plugin)
         return true
     end
 
-    local buildHeroArea = select(1, getUpvalue(HeroTitleBar.refreshHero, "buildHeroArea"))
+    local buildHeroArea, refresh_build_index = getUpvalue(HeroTitleBar.refreshHero, "buildHeroArea")
     if type(buildHeroArea) ~= "function" then
         logger.warn("Burrow hero sizing: buildHeroArea unavailable; leaving hero unchanged")
         return true
     end
+    local init_build_index = findUpvalueIndex(HeroTitleBar.init, "buildHeroArea")
 
     local HeroCard = select(1, getUpvalue(buildHeroArea, "HeroCard"))
     local area_height_index = select(2, getUpvalue(buildHeroArea, "HERO_AREA_H"))
@@ -112,13 +113,56 @@ local function patchHeroSizeAndContrast(plugin)
     -- the card, its containing area, and FileManager's titlebar height in lockstep.
     debug.setupvalue(buildHeroArea, area_height_index, area_height)
 
+    -- Keep the hero's existing total reserved height and card height, but move
+    -- the card slightly upward inside that area. This reduces the visual gap
+    -- below the Burrow icon without moving the cover grid or changing the card's
+    -- selected vertical size. The original builder still owns responsive width
+    -- alignment, so the beta.2 cover-edge alignment remains authoritative.
+    local HERO_UPWARD_SHIFT = Screen:scaleBySize(5)
+    local original_build_hero_area = buildHeroArea
+    local function buildTighterHeroArea(filepath, state)
+        local area = original_build_hero_area(filepath, state)
+        if type(area) ~= "table" or not area.dimen or not area[1]
+            or type(area[1].getSize) ~= "function"
+        then
+            return area
+        end
+
+        if not area._burrow_tighter_top_gap_v1 then
+            area._burrow_tighter_top_gap_v1 = true
+            local original_paint = area.paintTo
+            function area:paintTo(bb, x, y)
+                local content_size = self[1] and self[1]:getSize()
+                if not content_size or not self.dimen then
+                    if original_paint then
+                        return original_paint(self, bb, x, y)
+                    end
+                    return
+                end
+
+                local x_pos = x + math.floor((self.dimen.w - content_size.w) / 2)
+                local centered_y = y + math.floor((self.dimen.h - content_size.h) / 2)
+                local y_pos = math.max(y, centered_y - HERO_UPWARD_SHIFT)
+                self[1]:paintTo(bb, x_pos, y_pos)
+            end
+        end
+        return area
+    end
+
+    if init_build_index then
+        debug.setupvalue(HeroTitleBar.init, init_build_index, buildTighterHeroArea)
+    end
+    if refresh_build_index then
+        debug.setupvalue(HeroTitleBar.refreshHero, refresh_build_index, buildTighterHeroArea)
+    end
+
     local CARD_PADDING = Screen:scaleBySize(10)
     local COVER_SHADOW = Screen:scaleBySize(3)
     local CARD_RADIUS = math.max(4, Screen:scaleBySize(5))
     local TEXT_GAP = Screen:scaleBySize(14)
-    local STATUS_GAP = Screen:scaleBySize(2)
-    local DESCRIPTION_TOP_GAP = Screen:scaleBySize(4)
-    local DESCRIPTION_BOTTOM_GAP = Screen:scaleBySize(5)
+    local STATUS_GAP = Screen:scaleBySize(1)
+    local DESCRIPTION_TOP_GAP = Screen:scaleBySize(2)
+    local DESCRIPTION_BOTTOM_GAP = Screen:scaleBySize(1)
     local MIN_DESCRIPTION_H = Screen:scaleBySize(18)
 
     function HeroCard:init()
@@ -249,6 +293,10 @@ local function patchHeroSizeAndContrast(plugin)
                 face = safeFace(burrow_util.good_serif, 14, "infofont"),
                 width = text_w,
                 height = available_description_h,
+                -- Slightly tighter line leading plus smaller surrounding gaps lets
+                -- the description use the visibly empty room in compact cards.
+                -- Font size and contrast are unchanged; only line spacing is tightened.
+                line_height = 0.20,
                 -- Keep the box at the full remaining height so the progress row
                 -- stays anchored to the bottom of the text column.
                 height_adjust = false,
