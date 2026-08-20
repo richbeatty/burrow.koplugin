@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - agent/self-updater
+      - agent/0.4.6-beta.3-hero-height-contrast
   pull_request:
   workflow_dispatch:
 
