@@ -157,6 +157,15 @@ function BurrowSettings:getModuleManifest()
             feature = "hero_grid_alignment",
             depends = { "library_core", "hero_card", "cover_layout" },
         })
+
+        -- Hero sizing and e-ink contrast are layered on top of the existing hero
+        -- and grid-alignment modules. The patch only changes hero composition;
+        -- it does not alter cover-grid geometry or navigation.
+        add("hero_size_contrast", "2-hero-card-size-contrast.lua", "instance", {
+            filename = "2-hero-card-size-contrast.lua",
+            feature = "hero_size_contrast",
+            depends = { "library_core", "hero_card", "hero_grid_alignment" },
+        })
     else
         -- Series grouping and Return to Library remain available without Burrow's
         -- visual styling, but when styling is enabled they must load after the
@@ -249,6 +258,16 @@ function BurrowSettings:getModuleManifest()
         feature = "settings_menu",
         depends = { "library_core", "settings_menu_cleanup" },
     })
+
+    if self:isFeatureEnabled("library_visuals") then
+        -- Add the hero-height control after the settings compositor has finished
+        -- rebuilding Burrow Settings, so it cannot be dropped by menu cleanup.
+        add("hero_card_settings", "2-zzzzz-hero-card-settings.lua", "instance", {
+            filename = "2-zzzzz-hero-card-settings.lua",
+            feature = "hero_card_settings",
+            depends = { "library_core", "settings_menu_cleanup" },
+        })
+    end
 
     return modules
 end
