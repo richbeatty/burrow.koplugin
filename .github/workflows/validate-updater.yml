@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - agent/self-updater
-      - agent/0.4.6-beta.4-hero-spacing-description
   pull_request:
   workflow_dispatch:
 
