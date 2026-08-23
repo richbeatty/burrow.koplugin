@@ -28,13 +28,14 @@ function Module.apply()
     local logger = require("logger")
     local _ = require("gettext")
 
-    if ReaderCoptListener._burrow_kindle_alt_clock_v3 then
+    if ReaderCoptListener._burrow_kindle_alt_clock_v4 then
         Module.applied = true
         return true
     end
 
     local SETTING_CENTERED_CLOCK = "burrow_cre_header_centered_clock"
     local VIEW_MODULE_NAME = "burrow_kindle_alt_clock"
+    local CLOCK_Y_OFFSET = math.max(2, Screen:scaleBySize(2))
 
     local function centeredClockEnabled()
         return G_reader_settings:isTrue(SETTING_CENTERED_CLOCK)
@@ -172,7 +173,9 @@ function Module.apply()
             Blitbuffer.COLOR_WHITE
         )
 
-        self._burrow_container:paintTo(bb, x, y)
+        -- Give the Kindle-style clock a tiny amount of breathing room from the
+        -- top edge without changing CRengine's header geometry or book layout.
+        self._burrow_container:paintTo(bb, x, y + CLOCK_Y_OFFSET)
     end
 
     local function ensureOverlay(listener)
@@ -334,9 +337,9 @@ function Module.apply()
         return menu
     end
 
-    ReaderCoptListener._burrow_kindle_alt_clock_v3 = true
+    ReaderCoptListener._burrow_kindle_alt_clock_v4 = true
     Module.applied = true
-    logger.info("Burrow optional centered Alt status clock installed without CRengine gauge")
+    logger.info("Burrow optional centered Alt status clock installed with slight top inset")
     return true
 end
 
