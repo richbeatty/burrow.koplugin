@@ -232,6 +232,11 @@ function BurrowSettings:getModuleManifest()
             filename = "2-statusbar-margins-presets.lua",
             feature = "statusbar",
         })
+        add("alt_status_clock", "2-kindle-style-alt-status-clock.lua", "early", {
+            filename = "2-kindle-style-alt-status-clock.lua",
+            feature = "alt_status_clock",
+            depends = { "statusbar" },
+        })
     end
     if self:isFeatureEnabled("reading_location") then
         add("reading_location", "2-track-reading-location.lua", "early", {
