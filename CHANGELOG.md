@@ -4,7 +4,7 @@ All notable changes to Burrow will be documented here.
 
 ## [Unreleased]
 
-## [0.4.5-beta.1] - 2026-08-16
+## [0.4.5] - 2026-08-16
 
 ### Fixed
 

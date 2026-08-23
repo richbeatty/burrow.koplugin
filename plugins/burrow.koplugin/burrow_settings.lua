@@ -147,6 +147,25 @@ function BurrowSettings:getModuleManifest()
         visual("cover_layout", "2-z-burrow-cover-layout.lua", {
             "library_core", "rounded_covers", "folder_consistency",
         })
+
+        -- Keep the hero border aligned to the actual outer cover edges after
+        -- final cover sizing and gap reduction have been applied. This is an
+        -- isolated non-critical layer so a geometry mismatch cannot quarantine
+        -- Burrow's core library styling.
+        add("hero_grid_alignment", "2-hero-card-grid-alignment.lua", "instance", {
+            filename = "2-hero-card-grid-alignment.lua",
+            feature = "hero_grid_alignment",
+            depends = { "library_core", "hero_card", "cover_layout" },
+        })
+
+        -- Hero sizing and e-ink contrast are layered on top of the existing hero
+        -- and grid-alignment modules. The patch only changes hero composition;
+        -- it does not alter cover-grid geometry or navigation.
+        add("hero_size_contrast", "2-hero-card-size-contrast.lua", "instance", {
+            filename = "2-hero-card-size-contrast.lua",
+            feature = "hero_size_contrast",
+            depends = { "library_core", "hero_card", "hero_grid_alignment" },
+        })
     else
         -- Series grouping and Return to Library remain available without Burrow's
         -- visual styling, but when styling is enabled they must load after the
@@ -185,6 +204,16 @@ function BurrowSettings:getModuleManifest()
     add("epub_ornaments", "2-epub-ornaments.lua", "early", {
         filename = "2-epub-ornaments.lua",
         feature = "epub_ornaments",
+    })
+
+    -- Prefer layout-independent page labels for reflowable books. Publisher
+    -- page maps win when the document provides them; otherwise Burrow builds
+    -- KOReader's native synthetic map (1500 chars/page unless the user already
+    -- selected a different value). The footer and Reading Location already
+    -- consume these labels when page maps are active.
+    add("stable_page_numbers", "2-stable-page-numbers.lua", "early", {
+        filename = "2-stable-page-numbers.lua",
+        feature = "stable_page_numbers",
     })
 
     if self:isFeatureEnabled("quick_settings") then
@@ -229,6 +258,16 @@ function BurrowSettings:getModuleManifest()
         feature = "settings_menu",
         depends = { "library_core", "settings_menu_cleanup" },
     })
+
+    if self:isFeatureEnabled("library_visuals") then
+        -- Add the hero-height control after the settings compositor has finished
+        -- rebuilding Burrow Settings, so it cannot be dropped by menu cleanup.
+        add("hero_card_settings", "2-zzzzz-hero-card-settings.lua", "instance", {
+            filename = "2-zzzzz-hero-card-settings.lua",
+            feature = "hero_card_settings",
+            depends = { "library_core", "settings_menu_cleanup" },
+        })
+    end
 
     return modules
 end
