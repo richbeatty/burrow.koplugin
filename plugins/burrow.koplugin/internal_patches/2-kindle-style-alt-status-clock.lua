@@ -15,6 +15,7 @@ package.loaded[MODULE_KEY] = Module
 function Module.apply()
     if Module.applied then return true end
 
+    local Blitbuffer = require("ffi/blitbuffer")
     local CenterContainer = require("ui/widget/container/centercontainer")
     local Event = require("ui/event")
     local Font = require("ui/font")
@@ -27,7 +28,7 @@ function Module.apply()
     local logger = require("logger")
     local _ = require("gettext")
 
-    if ReaderCoptListener._burrow_kindle_alt_clock_v2 then
+    if ReaderCoptListener._burrow_kindle_alt_clock_v3 then
         Module.applied = true
         return true
     end
@@ -157,6 +158,19 @@ function Module.apply()
             self._burrow_header_h = header_h
             self._burrow_screen_w = screen_w
         end
+
+        -- CRengine always paints a progress gauge along the bottom edge of its
+        -- Alt status bar. Kindle's clock header has no such rule, so when the
+        -- centered clock is selected, erase only that narrow gauge strip after
+        -- CRengine has drawn it. Native header text above the strip is untouched.
+        local gauge_mask_h = math.min(header_h, math.max(4, Screen:scaleBySize(2)))
+        bb:paintRect(
+            x,
+            y + header_h - gauge_mask_h,
+            screen_w,
+            gauge_mask_h,
+            Blitbuffer.COLOR_WHITE
+        )
 
         self._burrow_container:paintTo(bb, x, y)
     end
@@ -320,9 +334,9 @@ function Module.apply()
         return menu
     end
 
-    ReaderCoptListener._burrow_kindle_alt_clock_v2 = true
+    ReaderCoptListener._burrow_kindle_alt_clock_v3 = true
     Module.applied = true
-    logger.info("Burrow optional centered Alt status clock installed")
+    logger.info("Burrow optional centered Alt status clock installed without CRengine gauge")
     return true
 end
 
