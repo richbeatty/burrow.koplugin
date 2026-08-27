@@ -46,6 +46,7 @@ local Geom = require("ui/geometry")
 local HorizontalGroup = require("ui/widget/horizontalgroup")
 local HorizontalSpan = require("ui/widget/horizontalspan")
 local IconWidget = require("ui/widget/iconwidget")
+local InfoMessage = require("ui/widget/infomessage")
 local Math = require("optmath")
 local NetworkMgr = require("ui/network/manager")
 local ProgressWidget = require("ui/widget/progresswidget")
@@ -163,6 +164,7 @@ local config_default = {
     open_on_start = true,
     rounded_tabs = false, -- deprecated; native KOReader top tabs are retained
     columns = 4,
+    sync_provider = "kosync",
 }
 
 local function mergeDefaults(target, defaults)
@@ -214,6 +216,41 @@ local function saveConfig()
     G_reader_settings:saveSetting(CONFIG_KEY, config)
 end
 
+local SYNC_PROVIDER_KOSYNC = "kosync"
+local SYNC_PROVIDER_BOOKORBIT = "bookorbit"
+
+local function getSyncProvider()
+    local provider = config.sync_provider
+    if provider ~= SYNC_PROVIDER_KOSYNC and provider ~= SYNC_PROVIDER_BOOKORBIT then
+        provider = SYNC_PROVIDER_KOSYNC
+        config.sync_provider = provider
+        saveConfig()
+    end
+    return provider
+end
+
+local function isBookOrbitAvailable()
+    local ok, PluginLoader = pcall(require, "pluginloader")
+    return ok
+        and PluginLoader
+        and type(PluginLoader.isPluginLoaded) == "function"
+        and PluginLoader:isPluginLoaded("bookorbit")
+end
+
+local function syncEvent(direction)
+    if getSyncProvider() == SYNC_PROVIDER_BOOKORBIT then
+        if not isBookOrbitAvailable() then
+            UIManager:show(InfoMessage:new{
+                text = _("BookOrbit is not installed or enabled."),
+                timeout = 3,
+            })
+            return nil
+        end
+        return direction == "push" and "BookOrbitPushProgress" or "BookOrbitPullProgress"
+    end
+    return direction == "push" and "KOSyncPushProgress" or "KOSyncPullProgress"
+end
+
 -- Bionic Reading is a fixed Reader Controls action, not a configurable
 -- Reader button. Remove configuration residue from earlier test overlays.
 local removed_legacy_bionic = false
@@ -239,6 +276,12 @@ local function closeAndBroadcast(touch_menu, event_name)
     UIManager:nextTick(function()
         UIManager:broadcastEvent(Event:new(event_name))
     end)
+end
+
+local function closeAndBroadcastSync(touch_menu, direction)
+    local event_name = syncEvent(direction)
+    if not event_name then return end
+    closeAndBroadcast(touch_menu, event_name)
 end
 
 local button_defs = {
@@ -289,13 +332,13 @@ local button_defs = {
         icon = "quick_push",
         label = _("Push sync"),
         reader = true,
-        callback = function(menu) closeAndBroadcast(menu, "KOSyncPushProgress") end,
+        callback = function(menu) closeAndBroadcastSync(menu, "push") end,
     },
     kosync_pull = {
         icon = "quick_pull",
         label = _("Pull sync"),
         reader = true,
-        callback = function(menu) closeAndBroadcast(menu, "KOSyncPullProgress") end,
+        callback = function(menu) closeAndBroadcastSync(menu, "pull") end,
     },
     library = {
         icon = "quick_library",
@@ -392,8 +435,8 @@ local button_display_names = {
     bookmarks = _("Bookmarks"),
     text = _("Text controls"),
     book_info = _("Book information"),
-    kosync_push = _("Push progress to KoSync"),
-    kosync_pull = _("Pull progress from KoSync"),
+    kosync_push = _("Push sync"),
+    kosync_pull = _("Pull sync"),
     library = _("Return to library"),
     file_search = _("File search"),
     wifi = _("Wi-Fi"),
@@ -834,9 +877,40 @@ local function makeButtonSettings(title, order, enabled)
 end
 
 local function buildSettingsMenu()
+    local sync_provider_item = {
+        text = _("Progress sync provider"),
+        help_text = _("Choose which sync service Burrow's Push sync and Pull sync buttons use."),
+        sub_item_table = {
+            {
+                text = _("KOReader Progress Sync"),
+                checked_func = function()
+                    return getSyncProvider() == SYNC_PROVIDER_KOSYNC
+                end,
+                callback = function()
+                    config.sync_provider = SYNC_PROVIDER_KOSYNC
+                    saveConfig()
+                end,
+            },
+            {
+                text = _("BookOrbit"),
+                help_text = _("Uses the installed BookOrbit plugin for manual progress push and pull."),
+                checked_func = function()
+                    return getSyncProvider() == SYNC_PROVIDER_BOOKORBIT
+                end,
+                enabled_func = isBookOrbitAvailable,
+                callback = function()
+                    config.sync_provider = SYNC_PROVIDER_BOOKORBIT
+                    saveConfig()
+                end,
+                separator = true,
+            },
+        },
+    }
+
     return {
         text = _("Rounded top menu and quick settings"),
         sub_item_table = {
+            sync_provider_item,
             makeButtonSettings(_("Reader buttons"), config.reader_order, config.reader_buttons),
             makeButtonSettings(_("File browser buttons"), config.filemanager_order, config.filemanager_buttons),
             {
