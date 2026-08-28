@@ -28,7 +28,7 @@ Burrow brings your local library, online catalogs, series navigation, and useful
 - Optional book, folder, and series titles under covers
 - Reading percentage and numbered series badges
 - Adjustable cover size, spacing, and grids from 1 by 1 up to 8 by 8
-- Flexible top bar, hero card, page indicators, and optional labels
+- Flexible top bar, adjustable hero card height, responsive hero-card alignment, page indicators, and optional labels
 - Return to Library navigation independent of automatic series grouping
 - Home and Store navigation throughout the configured library folder tree
 
@@ -37,12 +37,15 @@ Burrow brings your local library, online catalogs, series navigation, and useful
 - Browse OPDS catalogs in list or cover-grid views
 - Download books directly into your library
 - Download queue available from every catalog
+- Refreshes KOReader's cached book metadata when Store downloads replace an existing file
 - Store styling that matches the local library
 
 ### Reading and controls
 
 - Burrow Quick Settings in File Manager and Reader
-- Optional KoSync Push and Pull actions
+- Push and Pull progress-sync buttons with a selectable provider: KOReader Progress Sync or BookOrbit
+- Stable page numbers for reflowable books that remain consistent across font-size changes while preserving publisher-supplied page maps
+- Optional centered Kindle-style clock in KOReader's alternative top status bar while keeping native Alt status-bar items available
 - Four-way rotation with remembered orientation between library, reader, and KOReader restarts
 - Independent reader status-bar margins and preset cycling
 - Reading-location return control
