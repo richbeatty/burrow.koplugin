@@ -4,6 +4,25 @@ All notable changes to Burrow will be documented here.
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-08-28
+
+### Added
+
+- Added stable page-map numbering for reflowable books so page labels stay consistent across font-size changes while preserving publisher-supplied page maps.
+- Added an optional centered Kindle-style clock to KOReader's alternative top status bar without removing the native Alt status-bar choices.
+- Added a selectable Quick Settings progress-sync provider so the existing Push sync and Pull sync buttons can use either KOReader Progress Sync or BookOrbit.
+- Added adjustable hero-card height and responsive hero-card alignment controls.
+
+### Changed
+
+- Kept KOReader Progress Sync as the default Quick Settings sync provider so existing Burrow users keep their current behavior unless they explicitly select BookOrbit.
+- Refined the centered Alt status clock spacing and removed CRengine's progress-gauge line while the centered clock is active.
+
+### Fixed
+
+- Invalidated KOReader's cached book metadata after Store downloads replace an existing file so updated series and other embedded metadata can be read immediately.
+
+
 ## [0.4.5] - 2026-08-16
 
 ### Fixed
@@ -316,7 +335,9 @@ All notable changes to Burrow will be documented here.
 
 - Initial unified Burrow library, Store, and reader-interface package
 
-[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.4.3...HEAD
+[Unreleased]: https://github.com/richbeatty/burrow.koplugin/compare/v0.4.6...HEAD
+[0.4.6]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.4.6
+[0.4.5]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.4.5
 [0.4.3]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.4.3
 [0.4.2]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.4.2
 [0.4.2-beta.11]: https://github.com/richbeatty/burrow.koplugin/releases/tag/v0.4.2-beta.11
