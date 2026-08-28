@@ -48,6 +48,26 @@ local function persistDownloadQueue(owner)
 	end
 end
 
+-- Invalidate only the cached metadata/cover row for a file that Burrow has
+-- replaced. Keep this in the parent KOReader process, rather than inside the
+-- download subprocesses, so SQLite is never touched by the worker process.
+local function invalidateBookInfo(filepath)
+	local ok, BookInfoManager = pcall(require, "bookinfomanager")
+	if not ok or not BookInfoManager or type(BookInfoManager.deleteBookInfo) ~= "function" then
+		logger.warn("DownloadManager: could not load BookInfoManager to invalidate", filepath)
+		return false
+	end
+
+	local deleted, err = pcall(BookInfoManager.deleteBookInfo, BookInfoManager, filepath)
+	if not deleted then
+		logger.warn("DownloadManager: could not invalidate cached book info for", filepath, err)
+		return false
+	end
+
+	logger.dbg("DownloadManager: invalidated cached book info for", filepath)
+	return true
+end
+
 -- Compact, validate, and de-duplicate a persisted queue. This also repairs
 -- sparse Lua tables, which can otherwise leave an item that cannot be cleared
 -- reliably through array operations.
@@ -285,6 +305,9 @@ function DownloadManager.checkDownloadFile(browser, local_path, remote_url, user
 	local function download()
 		UIManager:scheduleIn(Constants.UI_TIMING.DOWNLOAD_SCHEDULE_DELAY, function()
 			DownloadManager.downloadFile(browser, local_path, remote_url, username, password, function(downloaded_path)
+				-- Direct Store downloads run in the main process, so invalidate
+				-- the replaced pathname before any caller refreshes the library.
+				invalidateBookInfo(downloaded_path)
 				DownloadManager.removeMatchingFromDownloadQueue(browser, downloaded_path, remote_url)
 				if caller_callback then
 					caller_callback(downloaded_path)
@@ -337,11 +360,16 @@ function DownloadManager.downloadDownloadList(browser)
 	for i = dl_count, 1, -1 do
 		local item = browser.downloads[i]
 		if downloaded and downloaded[item.file] then
+			invalidateBookInfo(item.file)
 			table.remove(browser.downloads, i)
 		else -- if subprocess has been interrupted, check for the downloaded file
 			local attr = lfs.attributes(item.file)
 			if attr then
 				if attr.size > 0 then
+					-- The file on disk changed even if the worker was interrupted
+					-- before returning its success table, so the old metadata row
+					-- must no longer be trusted.
+					invalidateBookInfo(item.file)
 					table.remove(browser.downloads, i)
 				else -- incomplete download
 					os.remove(item.file)
@@ -399,12 +427,16 @@ function DownloadManager.downloadPendingSyncs(browser, dl_list)
 		for i = dl_size, 1, -1 do
 			local item = dl_list[i]
 			if downloaded and downloaded[item.file] then
+				invalidateBookInfo(item.file)
 				dl_count = dl_count + 1
 				table.remove(dl_list, i)
 			else -- if subprocess has been interrupted, check for the downloaded file
 				local attr = lfs.attributes(item.file)
 				if attr then
 					if attr.size > 0 then
+						-- Forced sync may have replaced an already cached pathname.
+						-- Invalidate before the library can reuse the old metadata.
+						invalidateBookInfo(item.file)
 						table.remove(dl_list, i)
 						-- Only count files touched within the freshness window
 						if attr.modification > os.time() - Constants.SYNC.DOWNLOAD_FRESHNESS_SECONDS then
