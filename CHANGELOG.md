@@ -4,6 +4,15 @@ All notable changes to Burrow will be documented here.
 
 ## [Unreleased]
 
+## [0.4.7-beta.2] - 2026-08-30
+
+### Fixed
+
+- Made OPDS sync resolve a canonical immediate book shelf when the configured catalog URL is a navigation-only root, instead of requiring nested catalog URLs to end in `.opds`.
+- Avoided recursively crawling author, series, category, genre, and tag indexes while discovering the book shelf, preventing duplicate-library traversal.
+- Hardened mixed navigation/book feeds so sync uses the first real acquisition entry rather than assuming the first feed entry is always a book.
+- Added a distinct message when a selected catalog contains no discoverable downloadable book shelf instead of incorrectly reporting `Up to date!`.
+
 ## [0.4.7-beta.1] - 2026-08-30
 
 ### Fixed
