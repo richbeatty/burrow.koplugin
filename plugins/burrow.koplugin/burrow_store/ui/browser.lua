@@ -302,13 +302,17 @@ function OPDSBrowser:editCatalogFromInput(fields, item, no_refresh)
     if should_refresh then
         self:switchItemTable(nil, self.item_table, itemnumber)
     end
-    StateManager.getInstance():markDirty()
+    local state = StateManager.getInstance()
+    state:markDirty()
+    state:saveNow()
 end
 
 function OPDSBrowser:deleteCatalog(item)
     self.item_table = CatalogManager.deleteCatalog(self.servers, self.item_table, item)
     self:switchItemTable(nil, self.item_table, -1)
-    StateManager.getInstance():markDirty()
+    local state = StateManager.getInstance()
+    state:markDirty()
+    state:saveNow()
 end
 
 function OPDSBrowser:fetchFeed(item_url, headers_only)
@@ -653,6 +657,10 @@ function OPDSBrowser:onCloseWidget()
         self._catalog_loading_overlay = nil
     end
     self._catalog_loading = false
+    local state = StateManager.getInstance()
+    if state:isDirty() then
+        state:saveNow()
+    end
     return OPDSCoverMenu.onCloseWidget(self)
 end
 
