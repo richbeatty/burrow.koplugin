@@ -44,8 +44,8 @@ function OPDS:init()
     -- Initialize defaults
     settings_manager:initializeDefaults()
 
-    if settings_manager.is_first_run then
-        self.updated = true -- first run, force flush
+    if settings_manager.is_first_run or settings_manager.did_migrate then
+        self.updated = true -- first run or schema migration, force persistence
     end
 
     -- Initialize state manager singleton
@@ -57,10 +57,35 @@ function OPDS:init()
     self.pending_syncs = self.opds_settings:readSetting("pending_syncs", {})
     DownloadManager.repairDownloadQueue(self)
 
+    if self.updated then
+        self:persistState()
+    end
+
     if not self.embedded then
         self:onDispatcherRegisterActions()
         self.ui.menu:registerToMainMenu(self)
     end
+end
+
+function OPDS:persistState()
+    if not self.opds_settings then
+        return false
+    end
+
+    -- self.settings is the LuaSettings root table. Keep Store state tables
+    -- explicitly attached to that root, then flush once. Never save the root
+    -- table inside a nested "settings" key, which would create a cycle.
+    self.opds_settings:saveSetting("servers", self.servers or {})
+    self.opds_settings:saveSetting("downloads", self.downloads or {})
+    self.opds_settings:saveSetting("pending_syncs", self.pending_syncs or {})
+    self.opds_settings:flush()
+    self.updated = nil
+
+    local state = StateManager.getInstance()
+    if state then
+        state:markClean()
+    end
+    return true
 end
 
 function OPDS:getCoverHeightRatio()
@@ -70,8 +95,7 @@ end
 function OPDS:setCoverHeightRatio(ratio, preset_name)
     self.settings.cover_height_ratio = ratio
     self.settings.cover_size_preset = preset_name or "Custom"
-    self.opds_settings:saveSetting("settings", self.settings)
-    self.opds_settings:flush()
+    self:persistState()
 end
 
 function OPDS:getCurrentPresetName()
@@ -80,8 +104,7 @@ end
 
 function OPDS:saveSetting(key, value)
     self.settings[key] = value
-    self.opds_settings:saveSetting("settings", self.settings)
-    self.opds_settings:flush()
+    self:persistState()
 end
 
 function OPDS:getSetting(key)
@@ -213,6 +236,7 @@ function OPDS:_createBrowserInstance()
             end
             UIManager:close(self.opds_browser)
             self.opds_browser = nil
+            self:persistState()
             if self.last_downloaded_file then
                 if self.ui.file_chooser then
                     local pathname = util.splitFilePathName(self.last_downloaded_file)
@@ -322,9 +346,9 @@ function OPDS:showFileDownloadedDialog(file)
 end
 
 function OPDS:onFlushSettings()
-    if self.updated then
-        self.opds_settings:flush()
-        self.updated = nil
+    local state = StateManager.getInstance()
+    if self.updated or (state and state:isDirty()) then
+        self:persistState()
     end
 end
 
