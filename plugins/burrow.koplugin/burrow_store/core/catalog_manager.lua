@@ -31,13 +31,15 @@ end
 -- @param no_refresh boolean Don't refresh item table if true
 -- @return number, number New index, item number for refresh
 function CatalogManager.editCatalogFromInput(servers, item_table, fields, item, no_refresh)
+	local existing_server = item and servers[item.idx - 1] or nil
 	local new_server = {
-		title     = fields[1],
-		url       = fields[2]:match("^%a+://") and fields[2] or "http://" .. fields[2],
-		username  = fields[3] ~= "" and fields[3] or nil,
-		password  = fields[4] ~= "" and fields[4] or nil,
-		raw_names = fields[5],
-		sync      = fields[6],
+		title         = fields[1],
+		url           = fields[2]:match("^%a+://") and fields[2] or "http://" .. fields[2],
+		username      = fields[3] ~= "" and fields[3] or nil,
+		password      = fields[4] ~= "" and fields[4] or nil,
+		raw_names     = fields[5],
+		sync          = fields[6],
+		last_download = existing_server and existing_server.last_download or nil,
 	}
 
 	local new_item = CatalogUtils.buildRootEntry(new_server)
