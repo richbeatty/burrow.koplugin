@@ -328,6 +328,15 @@ function Methods:onShowBurrowStore()
     end
 end
 
+function Methods:onFlushSettings()
+    if self.store and type(self.store.onFlushSettings) == "function" then
+        local ok, err = pcall(self.store.onFlushSettings, self.store)
+        if not ok then
+            logger.warn(burrow_debug.logprefix, "Burrow Store settings flush failed", err)
+        end
+    end
+end
+
 function Methods:onSyncBurrowStore()
     if self.store then
         self.store:_startSyncFromDispatcher(false)
