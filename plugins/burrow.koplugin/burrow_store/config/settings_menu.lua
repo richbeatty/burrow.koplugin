@@ -87,9 +87,7 @@ function SettingsMenu.create(plugin)
 								return mode == "list" or mode == nil
 							end,
 							callback = function()
-								plugin.settings.display_mode = "list"
-								plugin.opds_settings:saveSetting("settings", plugin.settings)
-								plugin.opds_settings:flush()
+								plugin:saveSetting("display_mode", "list")
 								UIManager:show(InfoMessage:new {
 									text = _("Display mode set to List View.\n\nChanges will apply when you next browse a catalog."),
 									timeout = 2,
@@ -102,9 +100,7 @@ function SettingsMenu.create(plugin)
 								return plugin.settings.display_mode == "grid"
 							end,
 							callback = function()
-								plugin.settings.display_mode = "grid"
-								plugin.opds_settings:saveSetting("settings", plugin.settings)
-								plugin.opds_settings:flush()
+								plugin:saveSetting("display_mode", "grid")
 								UIManager:show(InfoMessage:new {
 									text = _("Display mode set to Grid View.\n\nChanges will apply when you next browse a catalog."),
 									timeout = 2,
@@ -272,9 +268,7 @@ function SettingsMenu.create(plugin)
 								return plugin.settings.debug_mode == true
 							end,
 							callback = function()
-								plugin.settings.debug_mode = not plugin.settings.debug_mode
-								plugin.opds_settings:saveSetting("settings", plugin.settings)
-								plugin.opds_settings:flush()
+								plugin:saveSetting("debug_mode", not plugin.settings.debug_mode)
 								UIManager:show(InfoMessage:new {
 									text = plugin.settings.debug_mode and
 										_("Debug mode enabled.\n\nDetailed logging is now active.") or
