@@ -58,6 +58,15 @@ function StateManager:markClean()
 	self:_notifyListeners("clean")
 end
 
+--- Persist all Store state immediately when the embedded Store owns storage.
+-- @return boolean True when persistence was performed
+function StateManager:saveNow()
+	if self._plugin and type(self._plugin.persistState) == "function" then
+		return self._plugin:persistState()
+	end
+	return false
+end
+
 --- Get the current settings data
 -- @return table Settings data table
 function StateManager:getSettings()
