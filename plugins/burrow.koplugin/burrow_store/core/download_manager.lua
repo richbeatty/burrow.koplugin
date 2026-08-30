@@ -426,24 +426,28 @@ function DownloadManager.downloadPendingSyncs(browser, dl_list)
 		local dl_size = #dl_list
 		for i = dl_size, 1, -1 do
 			local item = dl_list[i]
-			if downloaded and downloaded[item.file] then
-				invalidateBookInfo(item.file)
-				dl_count = dl_count + 1
-				table.remove(dl_list, i)
-			else -- if subprocess has been interrupted, check for the downloaded file
-				local attr = lfs.attributes(item.file)
-				if attr then
-					if attr.size > 0 then
-						-- Forced sync may have replaced an already cached pathname.
-						-- Invalidate before the library can reuse the old metadata.
-						invalidateBookInfo(item.file)
-						table.remove(dl_list, i)
-						-- Only count files touched within the freshness window
-						if attr.modification > os.time() - Constants.SYNC.DOWNLOAD_FRESHNESS_SECONDS then
-							dl_count = dl_count + 1
+			-- A pending item from a catalog that is not part of this sync run must
+			-- remain untouched so it can resume if that catalog is enabled later.
+			if browser.sync_server_list[item.catalog] then
+				if downloaded and downloaded[item.file] then
+					invalidateBookInfo(item.file)
+					dl_count = dl_count + 1
+					table.remove(dl_list, i)
+				else -- if subprocess has been interrupted, check for the downloaded file
+					local attr = lfs.attributes(item.file)
+					if attr then
+						if attr.size > 0 then
+							-- Forced sync may have replaced an already cached pathname.
+							-- Invalidate before the library can reuse the old metadata.
+							invalidateBookInfo(item.file)
+							table.remove(dl_list, i)
+							-- Only count files touched within the freshness window
+							if attr.modification > os.time() - Constants.SYNC.DOWNLOAD_FRESHNESS_SECONDS then
+								dl_count = dl_count + 1
+							end
+						else -- incomplete download
+							os.remove(item.file)
 						end
-					else -- incomplete download
-						os.remove(item.file)
 					end
 				end
 			end
