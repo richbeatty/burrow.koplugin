@@ -4,6 +4,20 @@ All notable changes to Burrow will be documented here.
 
 ## [Unreleased]
 
+## [0.4.7-beta.1] - 2026-08-30
+
+### Fixed
+
+- Made Burrow Store sync folder, file-type, maximum-download, catalog, and credential changes persist immediately across KOReader restarts.
+- Repaired the Store settings save path so the root settings table is no longer written inside itself, and migrated usable legacy nested Store settings into the current schema.
+- Forwarded KOReader settings flush events from the main Burrow plugin to the embedded Store as a fallback persistence path.
+- Persisted OPDS pending-sync work and catalog checkpoints together before downloads begin so interrupted or restarted syncs can resume safely.
+- Persisted the pending-sync list again after each download pass so completed and failed work survives correctly.
+- Prevented `Sync all catalogs` from reporting `Up to date!` when no catalogs are actually enabled for sync.
+- Prevented duplicate pending-sync entries after a restart and preserved dormant pending items for catalogs that are not part of the current sync run.
+- Preserved each catalog's `last_download` sync cursor when editing its settings.
+- Restored the one-entry subcatalog fallback used by KOReader's OPDS sync path and made file-type filters case-insensitive.
+
 ## [0.4.6] - 2026-08-28
 
 ### Added
