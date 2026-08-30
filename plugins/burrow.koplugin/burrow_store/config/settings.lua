@@ -17,8 +17,28 @@ function Settings:new(settings_file)
 
 	o.settings_file = settings_file or BurrowMigration.storeSettingsPath()
 	o.storage = LuaSettings:open(o.settings_file)
+	o.is_first_run = next(o.storage.data) == nil
+
+	-- Burrow Store keeps its active preferences in the root LuaSettings table.
+	-- Older OPDS data may still contain a nested "settings" table, while some
+	-- 0.4.6 paths accidentally tried to save the root table inside itself.
+	-- Migrate any usable nested values into the flat Burrow Store schema once,
+	-- then remove the nested key so future flushes can never serialize a loop.
+	local nested_settings = o.storage:readSetting("settings")
+	o.did_migrate = false
+	if type(nested_settings) == "table" and nested_settings ~= o.storage.data then
+		for key, value in pairs(nested_settings) do
+			if o.storage.data[key] == nil then
+				o.storage.data[key] = value
+			end
+		end
+		o.storage:delSetting("settings")
+		o.storage:saveSetting("burrow_store_flat_settings_v1", true)
+		o.storage:flush()
+		o.did_migrate = true
+	end
+
 	o.data = o.storage.data
-	o.is_first_run = next(o.data) == nil
 
 	return o
 end
@@ -55,7 +75,9 @@ end
 
 --- Save settings to storage
 function Settings:save()
-	self.storage:saveSetting("settings", self.data)
+	-- self.data is the storage root, so saving it below a "settings" key would
+	-- create a self-reference. Flushing the root is the correct persistence path.
+	self.storage:flush()
 end
 
 --- Flush settings to disk
