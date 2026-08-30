@@ -18,6 +18,22 @@ local StateManager = require("burrow_store.core.state_manager")
 
 local SyncManager = {}
 
+local function persistSyncState()
+	local state = StateManager.getInstance()
+	state:markDirty()
+	state:saveNow()
+end
+
+local function activePendingCount(browser)
+	local count = 0
+	for _, item in ipairs(browser.pending_syncs or {}) do
+		if item.catalog and browser.sync_server_list and browser.sync_server_list[item.catalog] then
+			count = count + 1
+		end
+	end
+	return count
+end
+
 --- Show dialog to set maximum number of files to sync
 -- @param browser table OPDSBrowser instance
 function SyncManager.showMaxSyncDialog(browser)
@@ -35,7 +51,7 @@ function SyncManager.showMaxSyncDialog(browser)
 		ok_text = _("Save"),
 		callback = function(spin)
 			browser.settings.sync_max_dl = spin.value
-			StateManager.getInstance():markDirty()
+			persistSyncState()
 		end,
 	}
 	UIManager:show(spin)
@@ -53,7 +69,7 @@ function SyncManager.showSyncDirChooser(browser)
 		onConfirm = function(inbox)
 			logger.info("set opds sync folder", inbox)
 			browser.settings.sync_dir = inbox
-			StateManager.getInstance():markDirty()
+			persistSyncState()
 		end,
 	}:chooseDir(force_chooser_dir)
 end
@@ -83,7 +99,7 @@ function SyncManager.showFiletypesDialog(browser)
 					callback = function()
 						local str = dialog:getInputText()
 						browser.settings.filetypes = str ~= "" and str or nil
-						StateManager.getInstance():markDirty()
+						persistSyncState()
 						UIManager:close(dialog)
 					end,
 				},
@@ -104,7 +120,10 @@ function SyncManager.parseFiletypes(filetypes_str)
 
 	local file_list = {}
 	for filetype in util.gsplit(filetypes_str, ",") do
-		file_list[util.trim(filetype)] = true
+		local normalized = util.trim(filetype):lower()
+		if normalized ~= "" then
+			file_list[normalized] = true
+		end
 	end
 	return file_list
 end
@@ -121,27 +140,42 @@ function SyncManager.checkAndStartSync(browser, server_idx)
 	end
 
 	browser.sync = true
+	browser.sync_server_list = {}
 	local info = InfoMessage:new {
 		text = _("Synchronizing lists…"),
 	}
 	UIManager:show(info)
 	UIManager:forceRePaint()
 
+	local selected_count = 0
 	if server_idx then
-		-- Sync specific server (first item is "Downloads", so subtract 1)
-		SyncManager.fillPendingSyncs(browser, browser.servers[server_idx - 1])
+		-- Sync specific server (first item is "Downloads", so subtract 1).
+		local server = browser.servers[server_idx - 1]
+		if server then
+			selected_count = 1
+			SyncManager.fillPendingSyncs(browser, server)
+		end
 	else
-		-- Sync all servers with sync enabled
+		-- Sync all servers with sync enabled.
 		for _, server in ipairs(browser.servers) do
 			if server.sync then
+				selected_count = selected_count + 1
 				SyncManager.fillPendingSyncs(browser, server)
 			end
 		end
 	end
 
+	-- The pending list and each catalog's last_download marker are one logical
+	-- checkpoint. Persist them together before any worker starts downloading so
+	-- a restart can safely resume instead of forgetting pending work.
+	persistSyncState()
 	UIManager:close(info)
 
-	if #browser.pending_syncs > 0 then
+	if selected_count == 0 then
+		UIManager:show(InfoMessage:new {
+			text = _("No catalogs are enabled for sync."),
+		})
+	elseif activePendingCount(browser) > 0 then
 		Trapper:wrap(function()
 			SyncManager.downloadPendingSyncs(browser)
 		end)
@@ -170,6 +204,17 @@ function SyncManager.fillPendingSyncs(browser, server)
 	local file_list                = SyncManager.parseFiletypes(browser.settings.filetypes)
 	local new_last_download        = nil
 	local dl_count                 = 1
+	local has_pending_for_server   = false
+	local pending_keys             = {}
+
+	for _, pending in ipairs(browser.pending_syncs or {}) do
+		if pending.file and pending.url then
+			pending_keys[pending.file .. "\0" .. pending.url] = true
+		end
+		if pending.catalog == server.url then
+			has_pending_for_server = true
+		end
+	end
 
 	local sync_list                = SyncManager.getSyncDownloadList(browser)
 	if sync_list then
@@ -181,8 +226,8 @@ function SyncManager.fillPendingSyncs(browser, server)
 				sub_table = SyncManager.getSyncDownloadList(browser, entry.url) or {}
 			end
 			if #sub_table > 0 then
-				-- The first element seems to be most compatible. Second element has most options
-				item = sub_table[2]
+				-- The first element seems to be most compatible. Second element has most options.
+				item = sub_table[2] or sub_table[1]
 			else
 				item = entry
 			end
@@ -198,14 +243,19 @@ function SyncManager.fillPendingSyncs(browser, server)
 						local filename = browser:getFileName(entry)
 						local download_path = browser:getLocalDownloadPath(filename, filetype, link.href)
 						if dl_count <= browser.sync_max_dl then
-							table.insert(browser.pending_syncs, {
-								file = download_path,
-								url = link.href,
-								username = browser.root_catalog_username,
-								password = browser.root_catalog_password,
-								catalog = server.url,
-							})
-							dl_count = dl_count + 1
+							local pending_key = download_path .. "\0" .. link.href
+							if not pending_keys[pending_key] then
+								table.insert(browser.pending_syncs, {
+									file = download_path,
+									url = link.href,
+									username = browser.root_catalog_username,
+									password = browser.root_catalog_password,
+									catalog = server.url,
+								})
+								pending_keys[pending_key] = true
+								dl_count = dl_count + 1
+							end
+							has_pending_for_server = true
 						end
 						break
 					end
@@ -215,7 +265,7 @@ function SyncManager.fillPendingSyncs(browser, server)
 	end
 
 	browser.sync_server_list[server.url] = true
-	if new_last_download then
+	if new_last_download and has_pending_for_server then
 		logger.dbg("Updating opds last download for server", server.title, "to", new_last_download)
 		browser:updateFieldInCatalog(server, "last_download", new_last_download)
 	end
