@@ -34,6 +34,88 @@ local function activePendingCount(browser)
 	return count
 end
 
+local function itemHasDownloadableAcquisition(item)
+	for _, link in ipairs(item and item.acquisitions or {}) do
+		if DownloadManager.getFiletype(link) then
+			return true
+		end
+	end
+	return false
+end
+
+local function tableHasDownloadableAcquisitions(item_table)
+	for _, item in ipairs(item_table or {}) do
+		if itemHasDownloadableAcquisition(item) then
+			return true
+		end
+	end
+	return false
+end
+
+local function normalizeShelfTitle(item)
+	return tostring(item and (item.title or item.text) or ""):lower()
+end
+
+local function syncShelfScore(item, original_index)
+	local title = normalizeShelfTitle(item)
+	local score = 0
+
+	-- Prefer one canonical book shelf over index-style branches that fan the
+	-- same books out by author, series, category, genre, etc.
+	if title:find("all books", 1, true) then
+		score = 1000
+	elseif title == "books" or title:find(" books", 1, true) then
+		score = 900
+	elseif title:find("library", 1, true) then
+		score = 850
+	elseif title:find("recently added", 1, true) or title:find("newest", 1, true) then
+		score = 800
+	elseif title:find("latest", 1, true) or title:find("recent", 1, true) then
+		score = 750
+	end
+
+	if title:find("author", 1, true)
+		or title:find("series", 1, true)
+		or title:find("categor", 1, true)
+		or title:find("genre", 1, true)
+		or title:find("tag", 1, true) then
+		score = score - 1000
+	end
+
+	-- Preserve feed order as a tiebreaker.
+	return score - (original_index or 0) / 1000
+end
+
+local function findSyncShelf(browser, root_table)
+	local candidates = {}
+	for index, item in ipairs(root_table or {}) do
+		if item.url then
+			table.insert(candidates, {
+				item = item,
+				index = index,
+				score = syncShelfScore(item, index),
+			})
+		end
+	end
+
+	table.sort(candidates, function(a, b)
+		return a.score > b.score
+	end)
+
+	-- Only inspect immediate shelves. This deliberately avoids recursively
+	-- walking Authors/Series/Categories trees and downloading the same library
+	-- through many different paths.
+	for _, candidate in ipairs(candidates) do
+		local child_table = browser:genItemTableFromURL(candidate.item.url)
+		if tableHasDownloadableAcquisitions(child_table) then
+			logger.dbg("Using nested OPDS shelf for sync", candidate.item.text or candidate.item.title, candidate.item.url)
+			return candidate.item.url
+		end
+	end
+
+	return nil
+end
+
 --- Show dialog to set maximum number of files to sync
 -- @param browser table OPDSBrowser instance
 function SyncManager.showMaxSyncDialog(browser)
@@ -141,6 +223,7 @@ function SyncManager.checkAndStartSync(browser, server_idx)
 
 	browser.sync = true
 	browser.sync_server_list = {}
+	browser.sync_no_download_feed = {}
 	local info = InfoMessage:new {
 		text = _("Synchronizing lists…"),
 	}
@@ -180,9 +263,19 @@ function SyncManager.checkAndStartSync(browser, server_idx)
 			SyncManager.downloadPendingSyncs(browser)
 		end)
 	else
-		UIManager:show(InfoMessage:new {
-			text = _("Up to date!"),
-		})
+		local unresolved_count = 0
+		for _ in pairs(browser.sync_no_download_feed or {}) do
+			unresolved_count = unresolved_count + 1
+		end
+		if unresolved_count == selected_count then
+			UIManager:show(InfoMessage:new {
+				text = _("No downloadable book shelf was found in the selected catalog."),
+			})
+		else
+			UIManager:show(InfoMessage:new {
+				text = _("Up to date!"),
+			})
+		end
 	end
 
 	browser.sync = false
@@ -284,8 +377,23 @@ function SyncManager.getSyncDownloadList(browser, url_arg)
 	while #sync_table < browser.sync_max_dl and not up_to_date do
 		sub_table = browser:genItemTableFromURL(fetch_url)
 
-		-- Handle timeout
+		-- Handle timeout or empty feed.
 		if #sub_table == 0 then
+			return sync_table
+		end
+
+		-- Many modern OPDS servers expose a navigation/shelf feed at the saved
+		-- catalog URL. KOReader's inherited sync code only recognized one narrow
+		-- ".opds" subcatalog pattern, so servers such as DriveShelf could browse
+		-- normally while Sync saw zero books. Resolve one immediate canonical
+		-- book shelf and run normal pagination/checkpoint logic against it.
+		if not url_arg and not tableHasDownloadableAcquisitions(sub_table) then
+			local shelf_url = findSyncShelf(browser, sub_table)
+			if shelf_url then
+				return SyncManager.getSyncDownloadList(browser, shelf_url)
+			end
+			browser.sync_no_download_feed = browser.sync_no_download_feed or {}
+			browser.sync_no_download_feed[browser.sync_server.url] = true
 			return sync_table
 		end
 
@@ -310,7 +418,7 @@ function SyncManager.getSyncDownloadList(browser, url_arg)
 		if acquisitions_empty then
 			first_href = sub_table[count].url
 		else
-			first_href = sub_table[1].acquisitions[1].href
+			first_href = sub_table[count].acquisitions[1].href
 		end
 
 		if first_href == browser.sync_server.last_download and not browser.sync_force then
@@ -326,7 +434,7 @@ function SyncManager.getSyncDownloadList(browser, url_arg)
 					href = nil
 				end
 			else
-				href = entry.acquisitions[1].href
+				href = entry.acquisitions and entry.acquisitions[1] and entry.acquisitions[1].href or nil
 			end
 
 			if href then
