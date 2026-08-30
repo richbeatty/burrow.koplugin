@@ -465,7 +465,9 @@ function DownloadManager.downloadPendingSyncs(browser, dl_list)
 			})
 		end
 
-		StateManager.getInstance():markDirty()
+		local state = StateManager.getInstance()
+		state:markDirty()
+		state:saveNow()
 		return duplicate_list
 	end
 
