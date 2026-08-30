@@ -294,7 +294,7 @@ function SyncManager.getSyncDownloadList(browser, url_arg)
 
 		-- Handle Project Gutenberg style entries
 		while #sub_table[count].acquisitions == 0 do
-			if util.stringEndsWith(sub_table[count].url, ".opds") then
+			if sub_table[count].url and util.stringEndsWith(sub_table[count].url, ".opds") then
 				acquisitions_empty = true
 				break
 			end
