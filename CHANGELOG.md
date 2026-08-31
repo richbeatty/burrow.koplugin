@@ -4,6 +4,13 @@ All notable changes to Burrow will be documented here.
 
 ## [Unreleased]
 
+## [0.4.7-beta.3] - 2026-08-30
+
+### Fixed
+
+- Refreshes and repaints the hero card as soon as background metadata/cover extraction finishes for newly synced books, instead of waiting for a later full library refresh.
+- Keeps post-sync BookInfo cache invalidation intact so replaced EPUBs cannot reuse stale cover or metadata.
+
 ## [0.4.7-beta.2] - 2026-08-30
 
 ### Fixed
