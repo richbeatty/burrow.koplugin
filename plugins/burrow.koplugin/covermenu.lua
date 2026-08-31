@@ -187,6 +187,7 @@ function CoverMenu:updateItems(select_number, no_recalculate_dimen)
         self.items_update_action = function()
             logger.dbg(burrow_debug.logprefix, "Scheduled items update:", #self.items_to_update, "waiting")
             local is_still_extracting = BookInfoManager:isExtractingInBackground()
+            local hero_may_have_changed = false
             local i = 1
             while i <= #self.items_to_update do -- process and clean in-place
                 local item = self.items_to_update[i]
@@ -204,12 +205,31 @@ function CoverMenu:updateItems(select_number, no_recalculate_dimen)
                         end
                     end
                     UIManager:setDirty(self.show_parent, refreshfunc)
+                    hero_may_have_changed = true
                     table.remove(self.items_to_update, i)
                 else
                     logger.dbg(burrow_debug.logprefix, "  not yet found", item.text)
                     i = i + 1
                 end
             end
+            -- The grid/list item above is refreshed as soon as its background
+            -- metadata extraction lands in BookInfoManager. The Burrow hero uses
+            -- that same cache, so refresh it in the same UI tick instead of
+            -- waiting for a later full CoverMenu:updateItems() call.
+            if hero_may_have_changed
+                and self.title_bar
+                and type(self.title_bar.refreshHero) == "function" then
+                local ok, hero_changed = pcall(self.title_bar.refreshHero, self.title_bar, false)
+                if ok and hero_changed then
+                    local hero_refresh_dimen = self.title_bar.dimen
+                    UIManager:setDirty(self.show_parent, function()
+                        return "ui", hero_refresh_dimen, self.show_parent.dithered
+                    end)
+                elseif not ok then
+                    logger.warn(burrow_debug.logprefix, "Hero refresh after cover extraction failed")
+                end
+            end
+
             if #self.items_to_update > 0 then -- re-schedule myself
                 if is_still_extracting then   -- we have still chances to get new stuff
                     logger.dbg(burrow_debug.logprefix, "re-scheduling items update:", #self.items_to_update, "still waiting")
