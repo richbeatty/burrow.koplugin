@@ -4,6 +4,17 @@ All notable changes to Burrow will be documented here.
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-09-02
+
+### Fixed
+
+- Made Burrow Store sync settings, catalog flags, credentials, pending work, and sync checkpoints persist safely across KOReader restarts.
+- Made OPDS sync discover a canonical immediate book shelf from navigation-only catalog roots, while avoiding recursive traversal through author, series, category, genre, and tag indexes.
+- Hardened mixed navigation/book OPDS feeds and restored safe file-type filtering and subcatalog fallback behavior.
+- Prevented false `Up to date!` results when no catalogs are enabled or when no downloadable book shelf can be found.
+- Preserved catalog sync cursors when editing settings and prevented duplicate or lost pending sync work across interrupted runs.
+- Refreshes the hero card as soon as background metadata and cover extraction finishes for newly synced books while keeping stale metadata and cover invalidation intact.
+
 ## [0.4.7-beta.3] - 2026-08-30
 
 ### Fixed
