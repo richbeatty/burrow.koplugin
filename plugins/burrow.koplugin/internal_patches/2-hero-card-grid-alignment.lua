@@ -17,7 +17,7 @@ local function patchHeroGridAlignment(plugin)
     local UIManager = require("ui/uimanager")
     local logger = require("logger")
 
-    if CoverMenu._burrow_hero_grid_alignment_v1 then
+    if CoverMenu._burrow_hero_grid_alignment_v2 then
         return true
     end
 
@@ -105,12 +105,35 @@ local function patchHeroGridAlignment(plugin)
         return nil
     end
 
-    local function normalizeGap(value)
+    local function normalizeSpacing(value)
         value = tonumber(value) or 0
-        value = math.floor(value + 0.5)
+        value = round(value)
+        if value < -30 then value = -30 end
+        if value > 30 then value = 30 end
+        return value
+    end
+
+    local function normalizeLegacyGap(value)
+        value = tonumber(value) or 0
+        value = round(value)
         if value < 0 then value = 0 end
         if value > 30 then value = 30 end
         return value
+    end
+
+    local function horizontalSpacing()
+        local value = BookInfoManager:getSetting("burrow_cover_horizontal_spacing")
+        if value ~= nil then
+            return normalizeSpacing(value)
+        end
+        return -normalizeLegacyGap(BookInfoManager:getSetting("burrow_cover_gap_reduction"))
+    end
+
+    local function scaledSigned(value)
+        value = normalizeSpacing(value)
+        if value == 0 then return 0 end
+        local scaled = Screen:scaleBySize(math.abs(value))
+        return value < 0 and -scaled or scaled
     end
 
     local function alignedSideMargin(menu)
@@ -131,32 +154,28 @@ local function patchHeroGridAlignment(plugin)
             return default_side_margin
         end
 
-        -- Cover gap reduction shifts whole tiles inward toward the center.
-        -- Mirror the exact shift used by the final cover-layout paint wrapper.
-        local gap_step = Screen:scaleBySize(normalizeGap(
-            BookInfoManager:getSetting("burrow_cover_gap_reduction")
-        ))
+        -- Mirror the final cover-layout horizontal spacing exactly. Negative
+        -- values tighten the grid and positive values widen it. Legacy gap
+        -- reduction values are translated to their equivalent negative value.
+        local spacing_step = scaledSigned(horizontalSpacing())
         local center_column = (columns + 1) / 2
-        local first_shift = round((center_column - 1) * gap_step)
-        local last_shift = round((center_column - columns) * gap_step)
+        local first_shift = round((1 - center_column) * spacing_step)
+        local last_shift = round((columns - center_column) * spacing_step)
 
         -- Centers of the first and last grid tiles are separated by one item
         -- width plus one item margin per column step. Add the exact rendered
-        -- cover width, then apply the inward shifts from gap reduction.
+        -- cover width, then apply the current final horizontal spacing shifts.
         local cover_span = (columns - 1) * (item_width + item_margin)
             + last_shift - first_shift + cover_width
 
         local screen_width = Screen:getWidth()
         cover_span = math.max(1, math.min(screen_width, round(cover_span)))
 
-        -- Preserve the current horizontal hero on very narrow grids rather than
-        -- allowing its cover and text to overlap. Standard multi-column grids
-        -- align exactly; narrow layouts retain the existing safe card width.
+        -- Continue to follow cover spacing automatically, but keep enough room
+        -- for the hero's horizontal cover-and-text composition on narrow grids.
         local current_card_width = screen_width - 2 * default_side_margin
         local minimum_safe_width = math.min(current_card_width, Screen:scaleBySize(360))
-        if cover_span < minimum_safe_width then
-            return default_side_margin
-        end
+        cover_span = math.max(cover_span, minimum_safe_width)
 
         return math.max(0, round((screen_width - cover_span) / 2))
     end
@@ -194,7 +213,7 @@ local function patchHeroGridAlignment(plugin)
         Menu.updateItems = CoverMenu.updateItems
     end
 
-    CoverMenu._burrow_hero_grid_alignment_v1 = true
+    CoverMenu._burrow_hero_grid_alignment_v2 = true
     logger.info("Burrow hero grid alignment loaded")
     return true
 end

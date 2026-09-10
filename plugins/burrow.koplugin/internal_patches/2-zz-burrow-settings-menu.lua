@@ -4,15 +4,15 @@ if existing_module then return existing_module end
 local Module = { key = MODULE_KEY, phase = "instance", filename = "2-zz-burrow-settings-menu.lua" }
 package.loaded[MODULE_KEY] = Module
 
--- Burrow settings cleanup v2.
+-- Burrow settings cleanup v3.
 -- Rebuild the user-facing menu around normal tasks instead of exposing the
 -- structure inherited from Cover Browser and individual Burrow patches.
 
 local function applySettingsCleanup(plugin)
-    if not plugin or plugin._burrow_settings_cleanup_v2_patched then
+    if not plugin or plugin._burrow_settings_cleanup_v3_patched then
         return true
     end
-    plugin._burrow_settings_cleanup_v2_patched = true
+    plugin._burrow_settings_cleanup_v3_patched = true
 
     local BookInfoManager = require("bookinfomanager")
     local BurrowLoader = require("burrow_loader")
@@ -23,7 +23,9 @@ local function applySettingsCleanup(plugin)
 
     local SERIES_SETTING = "automatic_series_grouping_enabled"
     local COVER_SIZE_SETTING = "burrow_cover_size_percent"
-    local COVER_GAP_SETTING = "burrow_cover_gap_reduction"
+    local LEGACY_COVER_GAP_SETTING = "burrow_cover_gap_reduction"
+    local COVER_HORIZONTAL_SPACING_SETTING = "burrow_cover_horizontal_spacing"
+    local COVER_VERTICAL_SPACING_SETTING = "burrow_cover_vertical_spacing"
     local SHOW_BOOK_TITLES_SETTING = "burrow_show_book_titles"
     local SHOW_FOLDER_TITLES_SETTING = "burrow_show_folder_titles"
     local SHOW_SERIES_TITLES_SETTING = "burrow_show_series_titles"
@@ -31,9 +33,9 @@ local function applySettingsCleanup(plugin)
     local DEFAULT_COVER_SIZE = 100
     local MIN_COVER_SIZE = 50
     local MAX_COVER_SIZE = 130
-    local DEFAULT_COVER_GAP = 0
-    local MIN_COVER_GAP = 0
-    local MAX_COVER_GAP = 30
+    local DEFAULT_COVER_SPACING = 0
+    local MIN_COVER_SPACING = -30
+    local MAX_COVER_SPACING = 30
     local RETURN_TILE_SETTING = "burrow_return_to_library_enabled"
 
     local function textOf(item)
@@ -171,10 +173,16 @@ local function applySettingsCleanup(plugin)
         }
     end
 
+    local function round(value)
+        if value >= 0 then
+            return math.floor(value + 0.5)
+        end
+        return math.ceil(value - 0.5)
+    end
 
     local function clampInteger(value, default_value, minimum, maximum)
         value = tonumber(value) or default_value
-        value = math.floor(value + 0.5)
+        value = round(value)
         return math.max(minimum, math.min(maximum, value))
     end
 
@@ -187,12 +195,32 @@ local function applySettingsCleanup(plugin)
         )
     end
 
-    local function getCoverGapReduction()
+    local function getHorizontalSpacing()
+        local value = BookInfoManager:getSetting(COVER_HORIZONTAL_SPACING_SETTING)
+        if value ~= nil then
+            return clampInteger(
+                value,
+                DEFAULT_COVER_SPACING,
+                MIN_COVER_SPACING,
+                MAX_COVER_SPACING
+            )
+        end
+
+        local legacy = clampInteger(
+            BookInfoManager:getSetting(LEGACY_COVER_GAP_SETTING),
+            0,
+            0,
+            30
+        )
+        return -legacy
+    end
+
+    local function getVerticalSpacing()
         return clampInteger(
-            BookInfoManager:getSetting(COVER_GAP_SETTING),
-            DEFAULT_COVER_GAP,
-            MIN_COVER_GAP,
-            MAX_COVER_GAP
+            BookInfoManager:getSetting(COVER_VERTICAL_SPACING_SETTING),
+            DEFAULT_COVER_SPACING,
+            MIN_COVER_SPACING,
+            MAX_COVER_SPACING
         )
     end
 
@@ -227,33 +255,58 @@ local function applySettingsCleanup(plugin)
         }
     end
 
-    local function coverSpacingItem()
+    local function spacingAxisItem(text, title, setting_name, getter)
         return {
             text_func = function()
-                return T(_("Space between covers: %1"), getCoverGapReduction())
+                return T(_("%1: %2"), text, getter())
             end,
-            help_text = _("0 keeps the normal spacing. Higher values pull neighboring covers closer together without changing their touch targets."),
             callback = function()
                 local SpinWidget = require("ui/widget/spinwidget")
                 UIManager:show(SpinWidget:new {
-                    title_text = _("Space between covers"),
-                    info_text = _("0 keeps the normal spacing. Increase the value to reduce the visible space between books and folders. Restart KOReader after saving."),
-                    value = getCoverGapReduction(),
-                    default_value = DEFAULT_COVER_GAP,
-                    value_min = MIN_COVER_GAP,
-                    value_max = MAX_COVER_GAP,
+                    title_text = title,
+                    info_text = _("0 is normal. Negative values move covers closer together. Positive values add more space. Cover size and touch areas do not change. Restart KOReader after saving."),
+                    value = getter(),
+                    default_value = DEFAULT_COVER_SPACING,
+                    value_min = MIN_COVER_SPACING,
+                    value_max = MAX_COVER_SPACING,
                     value_step = 2,
                     value_hold_step = 5,
                     ok_text = _("Save"),
                     callback = function(spin)
                         BookInfoManager:saveSetting(
-                            COVER_GAP_SETTING,
-                            clampInteger(spin.value, DEFAULT_COVER_GAP, MIN_COVER_GAP, MAX_COVER_GAP)
+                            setting_name,
+                            clampInteger(
+                                spin.value,
+                                DEFAULT_COVER_SPACING,
+                                MIN_COVER_SPACING,
+                                MAX_COVER_SPACING
+                            )
                         )
                         UIManager:askForRestart()
                     end,
                 })
             end,
+        }
+    end
+
+    local function coverSpacingMenu()
+        return {
+            text = _("Cover spacing"),
+            help_text = _("Adjust horizontal and vertical cover spacing independently. 0 is the normal Burrow layout."),
+            sub_item_table = {
+                spacingAxisItem(
+                    _("Horizontal"),
+                    _("Horizontal spacing"),
+                    COVER_HORIZONTAL_SPACING_SETTING,
+                    getHorizontalSpacing
+                ),
+                spacingAxisItem(
+                    _("Vertical"),
+                    _("Vertical spacing"),
+                    COVER_VERTICAL_SPACING_SETTING,
+                    getVerticalSpacing
+                ),
+            },
         }
     end
 
@@ -343,7 +396,7 @@ local function applySettingsCleanup(plugin)
         -- Build these entries directly so the cleanup menu does not depend on
         -- finding the older dynamically-labelled patch entries.
         append(view_items, coverSizeItem())
-        append(view_items, coverSpacingItem())
+        append(view_items, coverSpacingMenu())
         append(view_items, titlesUnderCoversMenu(self))
 
         local items_per_page = findItem(old_items, _("Items per page"))
