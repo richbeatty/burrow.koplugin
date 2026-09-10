@@ -178,6 +178,13 @@ function BurrowSettings:getModuleManifest()
             feature = "home_store",
             depends = { "library_core" },
         })
+        -- Keep first-render pager centering isolated from the base Home/Store
+        -- footer so a layout-specific regression cannot quarantine navigation.
+        add("home_store_pager_layout", "2-home-store-pager-layout.lua", "instance", {
+            filename = "2-home-store-pager-layout.lua",
+            feature = "home_store_pager_layout",
+            depends = { "home_store_footer" },
+        })
     end
 
     -- Kindle can preserve a stale hardware inversion flag across a KOReader
