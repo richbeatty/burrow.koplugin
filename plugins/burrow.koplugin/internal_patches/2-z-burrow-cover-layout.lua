@@ -5,24 +5,33 @@ local Module = { key = MODULE_KEY, phase = "instance", filename = "2-z-burrow-co
 package.loaded[MODULE_KEY] = Module
 
 --[[
-    Burrow Cover Gap and Size Controls v2
+    Burrow Cover Spacing and Size Controls v3
 
-    Adds two independent settings under Burrow display settings:
+    Adds two independent cover-spacing axes plus cover size:
 
-      Cover gap reduction
-        Moves complete tiles inward without changing the grid or touch targets.
+      Horizontal spacing
+        0 keeps normal placement. Negative values pull complete tiles closer
+        together and positive values spread them farther apart.
+
+      Vertical spacing
+        0 keeps normal placement. Negative values pull complete rows closer
+        together and positive values spread them farther apart.
 
       Cover size
         Resizes the primary cover inside book, real-folder, and virtual-series
         tiles. Book and series captions are deferred and repainted beneath the
         resized cover so an enlarged cover cannot paint over its title.
 
-    The size setting is applied after Burrow and the other cover patches
-    have finished building a tile. It therefore works with normal covers,
-    custom folder covers, stock folder art, and automatic series folders.
+    Spacing only changes where complete tiles are painted. It does not change
+    grid dimensions, cover size, touch targets, captions, badges, or the number
+    of rows and columns.
 
-    Restart KOReader after changing either setting. Remove older gap, spacing,
-    or cover-size patches before installing this file.
+    The previous burrow_cover_gap_reduction setting remains a compatibility
+    fallback. If no new horizontal setting exists, its value is translated to
+    the equivalent negative horizontal spacing so an upgrade preserves the
+    existing visible layout.
+
+    Restart KOReader after changing spacing or cover size.
 --]]
 
 local logger = require("logger")
@@ -44,15 +53,17 @@ local function patchBurrowCoverControls(plugin)
         return
     end
 
-    local GAP_SETTING_KEY = "burrow_cover_gap_reduction"
+    local LEGACY_GAP_SETTING_KEY = "burrow_cover_gap_reduction"
+    local HORIZONTAL_SPACING_SETTING_KEY = "burrow_cover_horizontal_spacing"
+    local VERTICAL_SPACING_SETTING_KEY = "burrow_cover_vertical_spacing"
     local SIZE_SETTING_KEY = "burrow_cover_size_percent"
     local SHOW_BOOK_TITLES_SETTING = "burrow_show_book_titles"
     local SHOW_FOLDER_TITLES_SETTING = "burrow_show_folder_titles"
     local SHOW_SERIES_TITLES_SETTING = "burrow_show_series_titles"
 
-    local DEFAULT_GAP = 0
-    local MIN_GAP = 0
-    local MAX_GAP = 30
+    local DEFAULT_SPACING = 0
+    local MIN_SPACING = -30
+    local MAX_SPACING = 30
 
     local DEFAULT_SIZE = 100
     local MIN_SIZE = 50
@@ -70,28 +81,78 @@ local function patchBurrowCoverControls(plugin)
         return math.ceil(value - 0.5)
     end
 
-    local function normalizeGap(value)
-        value = tonumber(value) or DEFAULT_GAP
-        value = math.floor(value + 0.5)
-        if value < MIN_GAP then value = MIN_GAP end
-        if value > MAX_GAP then value = MAX_GAP end
+    local function normalizeSpacing(value)
+        value = tonumber(value) or DEFAULT_SPACING
+        value = round(value)
+        if value < MIN_SPACING then value = MIN_SPACING end
+        if value > MAX_SPACING then value = MAX_SPACING end
+        return value
+    end
+
+    local function normalizeLegacyGap(value)
+        value = tonumber(value) or 0
+        value = round(value)
+        if value < 0 then value = 0 end
+        if value > 30 then value = 30 end
         return value
     end
 
     local function normalizeSize(value)
         value = tonumber(value) or DEFAULT_SIZE
-        value = math.floor(value + 0.5)
+        value = round(value)
         if value < MIN_SIZE then value = MIN_SIZE end
         if value > MAX_SIZE then value = MAX_SIZE end
         return value
     end
 
-    local function getGap()
-        return normalizeGap(BookInfoManager:getSetting(GAP_SETTING_KEY))
+    local function getHorizontalSpacing()
+        local value = BookInfoManager:getSetting(HORIZONTAL_SPACING_SETTING_KEY)
+        if value ~= nil then
+            return normalizeSpacing(value)
+        end
+        return -normalizeLegacyGap(BookInfoManager:getSetting(LEGACY_GAP_SETTING_KEY))
+    end
+
+    local function getVerticalSpacing()
+        return normalizeSpacing(BookInfoManager:getSetting(VERTICAL_SPACING_SETTING_KEY))
     end
 
     local function getCoverSize()
         return normalizeSize(BookInfoManager:getSetting(SIZE_SETTING_KEY))
+    end
+
+    local function scaledSigned(value)
+        value = normalizeSpacing(value)
+        if value == 0 then return 0 end
+        local scaled = Screen:scaleBySize(math.abs(value))
+        return value < 0 and -scaled or scaled
+    end
+
+    local function pageLocalIndex(menu, index)
+        local page = menu and tonumber(menu.page)
+        local perpage = menu and tonumber(menu.perpage)
+        if page and page >= 1 and perpage and perpage > 0 then
+            return index - (page - 1) * perpage
+        end
+        return index
+    end
+
+    local function visibleRowCount(menu, columns)
+        if not menu or not columns or columns < 1 then return nil end
+
+        local rows = tonumber(menu.nb_rows)
+        local page = tonumber(menu.page)
+        local perpage = tonumber(menu.perpage)
+        local item_table = menu.item_table
+        if type(item_table) ~= "table" or not page or page < 1 or not perpage or perpage < 1 then
+            return rows
+        end
+
+        local first_index = (page - 1) * perpage + 1
+        local remaining = #item_table - first_index + 1
+        if remaining <= 0 then return rows end
+        local page_count = math.min(perpage, remaining)
+        return math.max(1, math.ceil(page_count / columns))
     end
 
     local function isBook(item)
@@ -397,29 +458,39 @@ local function patchBurrowCoverControls(plugin)
         original_text_paint = TextWidget._burrow_cover_caption_original_paint or original_text_paint
     end
 
-    if not MosaicMenuItem._burrow_cover_gap_reduction_patched_v2 then
-        MosaicMenuItem._burrow_cover_gap_reduction_patched_v2 = true
+    if not MosaicMenuItem._burrow_cover_spacing_patched_v3 then
+        MosaicMenuItem._burrow_cover_spacing_patched_v3 = true
 
         local original_paint = MosaicMenuItem.paintTo
         function MosaicMenuItem:paintTo(bb, x, y)
-            local original_y = y
-            local reduction = getGap()
             local menu = self.menu
             local columns = menu and tonumber(menu.nb_cols)
             local index = self.entry and tonumber(self.entry.idx)
+            local local_index = index and pageLocalIndex(menu, index)
 
-            if reduction > 0 and columns and columns > 1 and index then
-                local column = ((index - 1) % columns) + 1
+            local horizontal_spacing = getHorizontalSpacing()
+            if horizontal_spacing ~= 0 and columns and columns > 1 and local_index and local_index > 0 then
+                local column = ((local_index - 1) % columns) + 1
                 local center_column = (columns + 1) / 2
-                local step = Screen:scaleBySize(reduction)
-                x = x + round((center_column - column) * step)
+                x = x + round((column - center_column) * scaledSigned(horizontal_spacing))
             end
 
+            local vertical_spacing = getVerticalSpacing()
+            if vertical_spacing ~= 0 and columns and columns > 0 and local_index and local_index > 0 then
+                local rows = visibleRowCount(menu, columns)
+                local row = math.floor((local_index - 1) / columns) + 1
+                if rows and rows > 1 and row <= rows then
+                    local center_row = (rows + 1) / 2
+                    y = y + round((row - center_row) * scaledSigned(vertical_spacing))
+                end
+            end
+
+            local tile_y = y
             local vertical_shift = tonumber(self._burrow_cover_vertical_shift) or 0
             active_caption_item = self
             self._burrow_cover_caption_deferred = nil
 
-            local ok, result = pcall(original_paint, self, bb, x, y - vertical_shift)
+            local ok, result = pcall(original_paint, self, bb, x, tile_y - vertical_shift)
             active_caption_item = nil
             if not ok then
                 error(result)
@@ -437,12 +508,12 @@ local function patchBurrowCoverControls(plugin)
                 -- an absolute y in frame.dimen, which previously allowed captions
                 -- to be placed through the cover.
                 local current_h = tonumber(self._burrow_cover_current_height) or 0
-                local cover_bottom = y - vertical_shift
+                local cover_bottom = tile_y - vertical_shift
                     + math.floor(((tonumber(self.height) or current_h) - current_h) / 2)
                     + current_h
 
                 local caption_y = cover_bottom + CAPTION_GAP
-                local lowest_y = original_y + (tonumber(self.height) or caption_size.h) - caption_size.h
+                local lowest_y = tile_y + (tonumber(self.height) or caption_size.h) - caption_size.h
                 if caption_y > lowest_y then
                     caption_y = lowest_y
                 end
@@ -455,15 +526,49 @@ local function patchBurrowCoverControls(plugin)
             return result
         end
 
-        logger.info("Burrow cover gap and safe caption placement loaded", getGap())
+        logger.info(
+            "Burrow cover spacing and safe caption placement loaded",
+            getHorizontalSpacing(),
+            getVerticalSpacing()
+        )
     end
 
-    if plugin._burrow_cover_controls_menu_patched_v2 then
+    if plugin._burrow_cover_controls_menu_patched_v3 then
         return
     end
-    plugin._burrow_cover_controls_menu_patched_v2 = true
+    plugin._burrow_cover_controls_menu_patched_v3 = true
 
     local original_add_to_main_menu = plugin.addToMainMenu
+
+    local function spacingAxisItem(text, setting_key, getter, axis_name)
+        return {
+            text_func = function()
+                return T(_("%1: %2"), text, getter())
+            end,
+            callback = function()
+                local SpinWidget = require("ui/widget/spinwidget")
+                UIManager:show(SpinWidget:new {
+                    title_text = axis_name,
+                    info_text = _("0 is normal. Negative values move covers closer together. Positive values add more space. Cover size and touch areas do not change. Restart KOReader after saving."),
+                    value = getter(),
+                    default_value = DEFAULT_SPACING,
+                    value_min = MIN_SPACING,
+                    value_max = MAX_SPACING,
+                    value_step = 2,
+                    value_hold_step = 5,
+                    ok_text = _("Save"),
+                    callback = function(spin)
+                        BookInfoManager:saveSetting(setting_key, normalizeSpacing(spin.value))
+                        local InfoMessage = require("ui/widget/infomessage")
+                        UIManager:show(InfoMessage:new {
+                            text = _("Cover spacing saved. Restart KOReader to apply it."),
+                            timeout = 3,
+                        })
+                    end,
+                })
+            end,
+        }
+    end
 
     function plugin:addToMainMenu(menu_items)
         original_add_to_main_menu(self, menu_items)
@@ -472,32 +577,22 @@ local function patchBurrowCoverControls(plugin)
         local items = root and root.sub_item_table
         if not items then return end
 
-        local gap_item = {
-            text_func = function()
-                return T(_("Cover gap reduction: %1"), getGap())
-            end,
-            callback = function()
-                local SpinWidget = require("ui/widget/spinwidget")
-                UIManager:show(SpinWidget:new {
-                    title_text = _("Cover gap reduction"),
-                    info_text = _("0 keeps normal placement. Higher values move complete book and folder tiles inward without changing their touch areas. Restart KOReader after saving."),
-                    value = getGap(),
-                    default_value = DEFAULT_GAP,
-                    value_min = MIN_GAP,
-                    value_max = MAX_GAP,
-                    value_step = 2,
-                    value_hold_step = 5,
-                    ok_text = _("Save"),
-                    callback = function(spin)
-                        BookInfoManager:saveSetting(GAP_SETTING_KEY, normalizeGap(spin.value))
-                        local InfoMessage = require("ui/widget/infomessage")
-                        UIManager:show(InfoMessage:new {
-                            text = _("Cover gap reduction saved. Restart KOReader to apply it."),
-                            timeout = 3,
-                        })
-                    end,
-                })
-            end,
+        local spacing_item = {
+            text = _("Cover spacing"),
+            sub_item_table = {
+                spacingAxisItem(
+                    _("Horizontal spacing"),
+                    HORIZONTAL_SPACING_SETTING_KEY,
+                    getHorizontalSpacing,
+                    _("Horizontal spacing")
+                ),
+                spacingAxisItem(
+                    _("Vertical spacing"),
+                    VERTICAL_SPACING_SETTING_KEY,
+                    getVerticalSpacing,
+                    _("Vertical spacing")
+                ),
+            },
         }
 
         local size_item = {
@@ -537,7 +632,7 @@ local function patchBurrowCoverControls(plugin)
             end
         end
 
-        table.insert(items, insert_at, gap_item)
+        table.insert(items, insert_at, spacing_item)
         table.insert(items, insert_at + 1, size_item)
     end
 end
