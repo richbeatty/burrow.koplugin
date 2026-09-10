@@ -4,6 +4,24 @@ All notable changes to Burrow will be documented here.
 
 ## [Unreleased]
 
+## [0.4.8-beta.1] - 2026-09-10
+
+### Added
+
+- Added independent horizontal and vertical cover-spacing controls under a single Cover spacing menu.
+- Added a two-direction spacing scale where `0` is normal, negative values tighten spacing, and positive values widen spacing.
+
+### Changed
+
+- Simplified the cover-spacing settings so cover size remains separate and horizontal/vertical spacing are grouped together.
+- Preserved existing `burrow_cover_gap_reduction` layouts by translating the legacy value to the equivalent new horizontal spacing when no new value has been saved.
+- Kept hero-card width aligned automatically to the final horizontal cover span while preserving its minimum safe composition width.
+
+### Fixed
+
+- Made cover spacing adjustable in both directions without changing cover size, grid dimensions, touch targets, captions, badges, physical-folder rendering, or automatic-series rendering.
+- Made vertical spacing operate on the rows actually visible on the current page so partial final pages are not shifted as if empty rows existed.
+
 ## [0.4.7] - 2026-09-02
 
 ### Fixed
