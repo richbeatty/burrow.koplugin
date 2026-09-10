@@ -94,6 +94,19 @@ function BurrowMigration.migrateSettings(BookInfoManager)
         end
     end
 
+    -- 0.4.8 replaced the one-way gap-reduction value with signed horizontal
+    -- spacing. Persist the equivalent new value once so the compatibility
+    -- fallback never has to expose Lua's numeric -0 in the settings menu.
+    -- Existing 0.4.8 users who already saved a horizontal value are untouched.
+    if BookInfoManager:getSetting("burrow_cover_horizontal_spacing") == nil then
+        local legacy_gap = tonumber(BookInfoManager:getSetting("burrow_cover_gap_reduction"))
+        if legacy_gap ~= nil then
+            legacy_gap = math.max(0, math.min(30, math.floor(legacy_gap + 0.5)))
+            local horizontal_spacing = legacy_gap == 0 and 0 or -legacy_gap
+            BookInfoManager:saveSetting("burrow_cover_horizontal_spacing", horizontal_spacing)
+        end
+    end
+
     for legacy_key, burrow_key in pairs(global_setting_map) do
         if G_reader_settings:readSetting(burrow_key) == nil then
             local legacy_value = G_reader_settings:readSetting(legacy_key)
