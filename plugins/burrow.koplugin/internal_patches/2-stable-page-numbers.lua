@@ -14,13 +14,14 @@ function Module.apply()
 
     local ReaderPageMap = require("apps/reader/modules/readerpagemap")
     local logger = require("logger")
-    if ReaderPageMap._burrow_stable_page_numbers_v3 then
+    if ReaderPageMap._burrow_stable_page_numbers_v4 then
         Module.applied = true
         return true
     end
     ReaderPageMap._burrow_stable_page_numbers_v1 = true
     ReaderPageMap._burrow_stable_page_numbers_v2 = true
     ReaderPageMap._burrow_stable_page_numbers_v3 = true
+    ReaderPageMap._burrow_stable_page_numbers_v4 = true
 
     local DEFAULT_CHARS_PER_PAGE = 1500
     local original_onReadSettings = ReaderPageMap.onReadSettings
@@ -40,14 +41,25 @@ function Module.apply()
         return chars
     end
 
+    local function isSyntheticMap(document)
+        if not document or type(document.isPageMapSynthetic) ~= "function" then
+            return false
+        end
+        local ok, value = pcall(document.isPageMapSynthetic, document)
+        return ok and value == true
+    end
+
     local function installSyntheticMap(self, document, chars, register_view)
         local ok, err = pcall(document.buildSyntheticPageMap, document, chars)
         if not ok then
             logger.warn("Burrow stable page numbers: synthetic page-map build failed", err)
             return false
         end
-        if not document:hasPageMap() then
-            logger.warn("Burrow stable page numbers: synthetic page-map build returned no map")
+
+        -- A publisher map already makes hasPageMap() true, so that alone cannot
+        -- prove the replacement succeeded. Verify the active map itself.
+        if not isSyntheticMap(document) then
+            logger.warn("Burrow stable page numbers: synthetic page-map build did not replace the active map")
             return false
         end
 
@@ -75,20 +87,10 @@ function Module.apply()
         end
     end
 
-    -- Publisher maps are kept unless their anchors are objectively unusable.
-    -- Labels themselves are never judged: Roman numerals, duplicate labels,
-    -- unusual numbering schemes and partial front matter are all valid.
-    --
-    -- We deliberately require a large map and document, then use three
-    -- conservative signals:
-    --   1. ordered anchors make a large backwards jump through the rendered
-    --      document, which violates page-list reading order;
-    --   2. almost all map entries literally reuse one or two XPointers; or
-    --   3. anchors sampled across the entire map resolve into essentially the
-    --      same tiny rendered-page span.
-    --
-    -- This catches malformed publisher maps without second-guessing healthy
-    -- print pagination.
+    -- Publisher maps are kept unless the map KOReader is actually using is
+    -- objectively unusable. getPageMap() already gives each entry's rendered
+    -- page as entry.page, so validate that directly instead of resolving the
+    -- stored XPointer a second time.
     local function publisherMapClearlyBroken(document)
         local ok, page_list = pcall(document.getPageMap, document)
         if not ok or type(page_list) ~= "table" then
@@ -106,31 +108,36 @@ function Module.apply()
             return false
         end
 
-        -- EPUB page-list targets are required to follow reading order. Allow
-        -- equal pages and small layout noise, but a substantial backwards jump
-        -- means the map cannot be used safely by CRengine's ordered lookup.
+        -- EPUB page-list targets must follow reading order. Equal rendered pages
+        -- are normal, and tiny reversals can happen around layout boundaries, but
+        -- a large backwards jump is not a usable ordered page map.
         local backward_limit = math.max(8, math.floor(rendered_pages * 0.10))
         local previous_page
         local previous_index
+        local page_value_count = 0
         for index, entry in ipairs(page_list) do
-            local xp = type(entry) == "table" and entry.xpointer or nil
-            if type(xp) == "string" and xp ~= "" then
-                local resolved_ok, page = pcall(document.getPageFromXPointer, document, xp)
-                page = resolved_ok and tonumber(page) or nil
-                if page then
-                    if previous_page and previous_page - page >= backward_limit then
-                        return true, string.format(
-                            "page-map anchor %d resolves to rendered page %d after anchor %d resolved to page %d",
-                            index,
-                            page,
-                            previous_index,
-                            previous_page
-                        )
-                    end
-                    previous_page = page
-                    previous_index = index
+            local page = type(entry) == "table" and tonumber(entry.page) or nil
+            if page then
+                page_value_count = page_value_count + 1
+                if previous_page and previous_page - page >= backward_limit then
+                    return true, string.format(
+                        "page-map entry %d is rendered page %d after entry %d was page %d",
+                        index,
+                        page,
+                        previous_index,
+                        previous_page
+                    )
                 end
+                previous_page = page
+                previous_index = index
             end
+        end
+
+        -- getPageMap() is expected to provide rendered-page values for its
+        -- entries. If a large map somehow does not, avoid guessing and leave it
+        -- alone rather than replacing a publisher map on weak evidence.
+        if page_value_count < math.min(20, total) then
+            return false
         end
 
         local xpointer_count = 0
@@ -166,30 +173,26 @@ function Module.apply()
         end
         table.sort(indices)
 
-        local resolved_count = 0
+        local sampled_count = 0
         local min_page
         local max_page
         for _, index in ipairs(indices) do
             local entry = page_list[index]
-            local xp = type(entry) == "table" and entry.xpointer or nil
-            if type(xp) == "string" and xp ~= "" then
-                local resolved_ok, page = pcall(document.getPageFromXPointer, document, xp)
-                page = resolved_ok and tonumber(page) or nil
-                if page then
-                    resolved_count = resolved_count + 1
-                    if not min_page or page < min_page then min_page = page end
-                    if not max_page or page > max_page then max_page = page end
-                end
+            local page = type(entry) == "table" and tonumber(entry.page) or nil
+            if page then
+                sampled_count = sampled_count + 1
+                if not min_page or page < min_page then min_page = page end
+                if not max_page or page > max_page then max_page = page end
             end
         end
 
-        if resolved_count >= 7 and min_page and max_page then
+        if sampled_count >= 7 and min_page and max_page then
             local span = max_page - min_page
             local collapsed_span = math.max(2, math.floor(rendered_pages * 0.01))
             if span <= collapsed_span then
                 return true, string.format(
-                    "%d sampled anchors span only %d of %d rendered pages",
-                    resolved_count,
+                    "%d sampled entries span only %d of %d rendered pages",
+                    sampled_count,
                     span,
                     rendered_pages
                 )
@@ -218,13 +221,15 @@ function Module.apply()
         end
 
         local document = self.ui.document
+        local active_is_synthetic = isSyntheticMap(document)
 
-        -- KOReader normally prefers a publisher-supplied page map. Keep that
-        -- preference unless the publisher map is clearly broken. A synthetic
-        -- map already selected by the user is never validated or replaced here.
+        -- KOReader normally prefers a publisher-supplied page map. Validate it
+        -- only when the active map is still the publisher map. Do not trust
+        -- self.chars_per_synthetic_page as proof that a previous replacement
+        -- actually succeeded.
         if self.has_pagemap
             and self.has_pagemap_document_provided
-            and not self.chars_per_synthetic_page
+            and not active_is_synthetic
         then
             local broken, reason = publisherMapClearlyBroken(document)
             if broken then
@@ -233,9 +238,6 @@ function Module.apply()
                     "Burrow stable page numbers: publisher page map is broken; using synthetic map instead:",
                     reason
                 )
-                -- The publisher map was already registered by KOReader's
-                -- _postInit(), so rebuilding it does not require registering the
-                -- same view module a second time.
                 installSyntheticMap(self, document, chars, false)
             end
         end
