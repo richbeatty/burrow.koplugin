@@ -103,12 +103,13 @@ function Module.apply()
     end
 
     local function isKOSyncSuspendNetworkingCall()
-        -- Called from NetworkMgr:willRerunWhenOnline. Inspect only its immediate
-        -- caller and require both the KOSync source file and the named
-        -- on_suspend=true local. This keeps the behavior scoped to KOReader's
-        -- suspend autosync path instead of changing normal network-required
-        -- actions, manual Push/Pull, Store, updater, or other plugins.
-        local info = debug.getinfo(2, "S")
+        -- This helper is called from Burrow's NetworkMgr:willRerunWhenOnline
+        -- wrapper, so the KOSync updateProgress frame is three levels up:
+        -- KOSync:updateProgress -> willRerunWhenOnline -> this helper.
+        -- Require both the KOSync source file and the named on_suspend=true local
+        -- so normal network-required actions, manual Push/Pull, Store, updater,
+        -- and other plugins keep KOReader's native behavior.
+        local info = debug.getinfo(3, "S")
         local source = info and info.source or ""
         if not source:find("plugins/kosync%.koplugin/main%.lua", 1, false) then
             return false
@@ -116,7 +117,7 @@ function Module.apply()
 
         local index = 1
         while true do
-            local name, value = debug.getlocal(2, index)
+            local name, value = debug.getlocal(3, index)
             if not name then break end
             if name == "on_suspend" then
                 return value == true
@@ -293,7 +294,7 @@ function Module.apply()
     end
 
     function NetworkMgr:willRerunWhenOnline(callback)
-        if not self:isOnline() and isKOSyncSuspendNetworkingCall() then
+        if isKOSyncSuspendNetworkingCall() and not self:isOnline() then
             -- Returning false tells KOSync to continue its non-interactive
             -- updateProgress call without bringing Wi-Fi up. The network request
             -- will naturally fail as unreachable and KOSync will queue that
