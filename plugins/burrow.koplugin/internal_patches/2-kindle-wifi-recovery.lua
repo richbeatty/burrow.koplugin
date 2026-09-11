@@ -174,17 +174,20 @@ function Module.apply()
     end
     NetworkMgr._burrow_kindle_wifi_recovery_callback = recovery_callback
 
+    local function scheduleSilentRecovery(self)
+        cancelScheduledRecovery(self)
+        self._burrow_kindle_wifi_recovery_pending = true
+        UIManager:scheduleIn(RECOVERY_DELAY_SECONDS, recovery_callback)
+    end
+
     function NetworkMgr:restoreWifiAsync(...)
         -- This method is used by KOReader's automatic startup/resume restoration,
         -- not by the user's explicit Wi-Fi toggle. Mark that narrow lifecycle so
         -- an eventual timeout can preserve the user's prior Wi-Fi intent.
         self._burrow_kindle_auto_restore_active = true
-        cancelScheduledRecovery(self)
 
         local result = original_restore(self, ...)
-
-        self._burrow_kindle_wifi_recovery_pending = true
-        UIManager:scheduleIn(RECOVERY_DELAY_SECONDS, recovery_callback)
+        scheduleSilentRecovery(self)
         return result
     end
 
@@ -251,6 +254,21 @@ function Module.apply()
     function NetworkMgr:toggleWifiOff(complete_callback, interactive)
         if interactive == nil then interactive = true end
         return original_toggle_off(self, complete_callback, interactive)
+    end
+
+    -- NetworkMgr is initialized before Burrow's early modules are applied. If
+    -- KOReader already began an automatic startup restore, join that in-flight
+    -- attempt so the first launch after updating receives the same silent scan
+    -- and intent-preservation behavior as later resume events.
+    self = NetworkMgr
+    self:queryNetworkState()
+    if G_reader_settings:isTrue("auto_restore_wifi")
+        and self.wifi_was_on == true
+        and not (self.is_wifi_on and self.is_connected)
+    then
+        self._burrow_kindle_auto_restore_active = true
+        scheduleSilentRecovery(self)
+        logger.dbg("Burrow Kindle Wi-Fi recovery: joined startup background restore")
     end
 
     NetworkMgr._burrow_kindle_wifi_recovery_v1 = true
