@@ -69,12 +69,38 @@ function Module.sync()
     return true
 end
 
+local function patchDirectory()
+    local source = debug.getinfo(1, "S").source
+    return source:match("^@(.+)/[^/]+$")
+end
+
+local function applyFastDarkPageTurns()
+    -- This experiment is e-ink-wide, not Kindle-specific. It is loaded from
+    -- this always-present early module to avoid changing Burrow's established
+    -- early-module ordering. The implementation itself returns immediately on
+    -- non-e-ink screens.
+    local directory = patchDirectory()
+    if not directory then return end
+
+    local ok_load, fast_turns = pcall(dofile, directory .. "/2-fast-dark-page-turns.lua")
+    if not ok_load or type(fast_turns) ~= "table" or type(fast_turns.apply) ~= "function" then
+        local logger = require("logger")
+        logger.warn("[Burrow] Fast dark page turns unavailable", fast_turns)
+        return
+    end
+
+    local ok_apply, result, apply_error = pcall(fast_turns.apply)
+    if not ok_apply or result == false then
+        local logger = require("logger")
+        logger.warn("[Burrow] Fast dark page turns failed; continuing with KOReader defaults", ok_apply and apply_error or result)
+    end
+end
+
 local function applyKindleWifiRecovery()
     -- Keep the Wi-Fi recovery implementation in its own file and guard it here.
     -- A networking compatibility failure must never disable Kindle Night Mode
     -- synchronization or any larger Burrow subsystem.
-    local source = debug.getinfo(1, "S").source
-    local directory = source:match("^@(.+)/[^/]+$")
+    local directory = patchDirectory()
     if not directory then return end
 
     local ok_load, recovery = pcall(dofile, directory .. "/2-kindle-wifi-recovery.lua")
@@ -97,6 +123,7 @@ function Module.apply()
     local ok, err = Module.sync()
     if not ok then return false, err end
 
+    applyFastDarkPageTurns()
     applyKindleWifiRecovery()
 
     Module.applied = true
