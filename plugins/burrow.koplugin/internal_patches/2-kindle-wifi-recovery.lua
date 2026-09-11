@@ -25,6 +25,13 @@ package.loaded[MODULE_KEY] = Module
     backend to authenticate it. There are deliberately no dialogs, toasts, or
     failure messages in this automatic path.
 
+    KOReader Progress Sync has a separate suspend path which deliberately calls
+    updateProgress with ensure_networking=true. When a Kindle is out of range,
+    that path calls willRerunWhenOnline(), which invokes the full Kindle Wi-Fi
+    connection flow and shows the "Scanning for networks" UI. Burrow detects only
+    that KOSync-on-suspend call and lets the progress request proceed offline;
+    KOSync then uses its existing retry queue and drains it on NetworkConnected.
+
     Important behavior:
     - Kindle only. Other devices are untouched.
     - Manual Wi-Fi actions remain KOReader's normal visible/interactive path.
@@ -33,6 +40,8 @@ package.loaded[MODULE_KEY] = Module
     - Explicit/manual Wi-Fi off still clears that intent through KOReader.
     - Only one silent scan is scheduled per restore call, with a short cooldown
       to avoid duplicate work during rapid lifecycle events.
+    - KOSync suspend never forces a visible connection attempt while offline;
+      its own retry queue preserves the progress update for later.
 --]]
 
 function Module.apply()
@@ -48,7 +57,7 @@ function Module.apply()
     local UIManager = require("ui/uimanager")
     local logger = require("logger")
 
-    if NetworkMgr._burrow_kindle_wifi_recovery_v1 then
+    if NetworkMgr._burrow_kindle_wifi_recovery_v2 then
         Module.applied = true
         return true
     end
@@ -60,6 +69,7 @@ function Module.apply()
     local original_disable = NetworkMgr.disableWifi
     local original_toggle_on = NetworkMgr.toggleWifiOn
     local original_toggle_off = NetworkMgr.toggleWifiOff
+    local original_will_rerun_when_online = NetworkMgr.willRerunWhenOnline
 
     if type(original_restore) ~= "function"
         or type(original_abort) ~= "function"
@@ -68,6 +78,7 @@ function Module.apply()
         or type(original_disable) ~= "function"
         or type(original_toggle_on) ~= "function"
         or type(original_toggle_off) ~= "function"
+        or type(original_will_rerun_when_online) ~= "function"
         or type(NetworkMgr.getNetworkList) ~= "function"
         or type(NetworkMgr.authenticateNetwork) ~= "function"
     then
@@ -89,6 +100,31 @@ function Module.apply()
     local function clearAutomaticRestore(self)
         cancelScheduledRecovery(self)
         self._burrow_kindle_auto_restore_active = false
+    end
+
+    local function isKOSyncSuspendNetworkingCall()
+        -- Called from NetworkMgr:willRerunWhenOnline. Inspect only its immediate
+        -- caller and require both the KOSync source file and the named
+        -- on_suspend=true local. This keeps the behavior scoped to KOReader's
+        -- suspend autosync path instead of changing normal network-required
+        -- actions, manual Push/Pull, Store, updater, or other plugins.
+        local info = debug.getinfo(2, "S")
+        local source = info and info.source or ""
+        if not source:find("plugins/kosync%.koplugin/main%.lua", 1, false) then
+            return false
+        end
+
+        local index = 1
+        while true do
+            local name, value = debug.getlocal(2, index)
+            if not name then break end
+            if name == "on_suspend" then
+                return value == true
+            end
+            index = index + 1
+        end
+
+        return false
     end
 
     local function silentRecover(self)
@@ -256,6 +292,18 @@ function Module.apply()
         return original_toggle_off(self, complete_callback, interactive)
     end
 
+    function NetworkMgr:willRerunWhenOnline(callback)
+        if not self:isOnline() and isKOSyncSuspendNetworkingCall() then
+            -- Returning false tells KOSync to continue its non-interactive
+            -- updateProgress call without bringing Wi-Fi up. The network request
+            -- will naturally fail as unreachable and KOSync will queue that
+            -- progress update for its existing NetworkConnected drain path.
+            logger.dbg("Burrow Kindle Wi-Fi recovery: KOSync suspend is offline; queueing progress without Wi-Fi scan")
+            return false
+        end
+        return original_will_rerun_when_online(self, callback)
+    end
+
     -- NetworkMgr is initialized before Burrow's early modules are applied. If
     -- KOReader already began an automatic startup restore, join that in-flight
     -- attempt so the first launch after updating receives the same silent scan
@@ -272,6 +320,7 @@ function Module.apply()
     end
 
     NetworkMgr._burrow_kindle_wifi_recovery_v1 = true
+    NetworkMgr._burrow_kindle_wifi_recovery_v2 = true
     Module.applied = true
     logger.info("Burrow Kindle silent Wi-Fi recovery loaded")
     return true
