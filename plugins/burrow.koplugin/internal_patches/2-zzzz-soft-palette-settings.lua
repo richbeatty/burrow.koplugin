@@ -26,6 +26,7 @@ function Module.apply(plugin)
     local T = require("ffi/util").template
 
     local ORNAMENT_SETTING = "burrow_soft_palette_recolor_ornaments"
+    local FAST_EINK_PAGE_TURNS_SETTING = "burrow_fast_dark_page_turns"
 
     -- Mark the real reader CreDocument before CRengine loads it. The
     -- decorative EPUB shadow loader checks this marker so file-browser cover
@@ -153,6 +154,32 @@ function Module.apply(plugin)
         local value = G_reader_settings:readSetting(SPLIT_FOOTER_ENABLED)
         if value == nil then return true end
         return value == true
+    end
+
+    local function fastEinkPageTurnsEnabled()
+        local value = G_reader_settings:readSetting(FAST_EINK_PAGE_TURNS_SETTING)
+        if value == nil then return true end
+        return value == true
+    end
+
+    local function hasEinkScreen()
+        local ok, value = pcall(Device.hasEinkScreen, Device)
+        return ok and value == true
+    end
+
+    local function fastEinkPageTurnsItem()
+        if not hasEinkScreen() then return nil end
+        return {
+            text = _("Fast e-ink page turns"),
+            help_text = _("Use KOReader's native fast e-ink refresh for most reflowable page turns in both light and dark mode. Every sixth turn uses the normal refresh to limit residue. Scrolling, PDFs, comics, menus, and non-e-ink screens are unchanged."),
+            checked_func = fastEinkPageTurnsEnabled,
+            callback = function()
+                G_reader_settings:saveSetting(
+                    FAST_EINK_PAGE_TURNS_SETTING,
+                    not fastEinkPageTurnsEnabled()
+                )
+            end,
+        }
     end
 
     local function readChoice(key, default)
@@ -411,10 +438,17 @@ function Module.apply(plugin)
             -- another module was not discoverable at menu-build time.
             reading_progress = reading_progress or fallbackReadingProgressMenu()
 
+            local reading_items = {}
+            local fast_page_turns = fastEinkPageTurnsItem()
+            if fast_page_turns then
+                reading_items[#reading_items + 1] = fast_page_turns
+            end
+            reading_items[#reading_items + 1] = reading_progress
+
             local reading = {
                 text = _("Reading"),
                 _burrow_reading_settings = true,
-                sub_item_table = { reading_progress },
+                sub_item_table = reading_items,
             }
 
             local insert_at = #items + 1
