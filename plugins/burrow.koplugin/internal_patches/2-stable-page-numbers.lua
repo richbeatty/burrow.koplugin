@@ -78,8 +78,8 @@ function Module.apply()
     -- collapsed. Labels themselves are not inspected: Roman numerals, duplicate
     -- labels, unusual numbering schemes and partial front matter are all valid.
     --
-    -- We deliberately require a reasonably large map and document. Then we use
-    -- two independent, conservative signals:
+    -- We deliberately require a large map and document. Then we use two
+    -- independent, conservative signals:
     --   1. almost all map entries literally reuse one or two XPointers; or
     --   2. anchors sampled across the entire map all resolve into essentially the
     --      same tiny rendered-page span.
@@ -93,13 +93,13 @@ function Module.apply()
         end
 
         local total = #page_list
-        if total < 20 then
+        if total < 40 then
             return false
         end
 
         local ok_pages, rendered_pages = pcall(document.getPages, document)
         rendered_pages = ok_pages and tonumber(rendered_pages) or 0
-        if not rendered_pages or rendered_pages < 20 then
+        if not rendered_pages or rendered_pages < 40 then
             return false
         end
 
@@ -117,8 +117,8 @@ function Module.apply()
             end
         end
 
-        if xpointer_count >= 20 then
-            local duplicate_limit = math.max(2, math.floor(xpointer_count * 0.05))
+        if xpointer_count >= 40 then
+            local duplicate_limit = math.max(2, math.floor(xpointer_count * 0.03))
             if unique_xpointer_count <= duplicate_limit then
                 return true, string.format(
                     "%d page-map entries use only %d distinct anchors",
@@ -153,9 +153,9 @@ function Module.apply()
             end
         end
 
-        if resolved_count >= 6 and min_page and max_page then
+        if resolved_count >= 7 and min_page and max_page then
             local span = max_page - min_page
-            local collapsed_span = math.max(2, math.floor(rendered_pages * 0.02))
+            local collapsed_span = math.max(2, math.floor(rendered_pages * 0.01))
             if span <= collapsed_span then
                 return true, string.format(
                     "%d sampled anchors span only %d of %d rendered pages",
