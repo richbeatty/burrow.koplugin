@@ -69,11 +69,35 @@ function Module.sync()
     return true
 end
 
+local function applyKindleWifiRecovery()
+    -- Keep the Wi-Fi recovery implementation in its own file and guard it here.
+    -- A networking compatibility failure must never disable Kindle Night Mode
+    -- synchronization or any larger Burrow subsystem.
+    local source = debug.getinfo(1, "S").source
+    local directory = source:match("^@(.+)/[^/]+$")
+    if not directory then return end
+
+    local ok_load, recovery = pcall(dofile, directory .. "/2-kindle-wifi-recovery.lua")
+    if not ok_load or type(recovery) ~= "table" or type(recovery.apply) ~= "function" then
+        local logger = require("logger")
+        logger.warn("[Burrow] Kindle Wi-Fi recovery unavailable", recovery)
+        return
+    end
+
+    local ok_apply, result, apply_error = pcall(recovery.apply)
+    if not ok_apply or result == false then
+        local logger = require("logger")
+        logger.warn("[Burrow] Kindle Wi-Fi recovery failed; continuing without it", ok_apply and apply_error or result)
+    end
+end
+
 function Module.apply()
     if Module.applied then return true end
 
     local ok, err = Module.sync()
     if not ok then return false, err end
+
+    applyKindleWifiRecovery()
 
     Module.applied = true
     return true
