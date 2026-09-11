@@ -6,6 +6,7 @@ local OPDSBrowser = require("burrow_store.ui.browser")
 local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local lfs = require("libs/libkoreader-lfs")
+local logger = require("logger")
 local util = require("util")
 local _ = require("gettext")
 local T = require("ffi/util").template
@@ -215,8 +216,38 @@ function OPDS:onDispatcherRegisterActions()
     )
 end
 
+-- Store downloads happen while KOReader's file chooser can remain open behind
+-- the Store. The files are already on disk, but the chooser keeps its existing
+-- item table until it is told to rescan the current directory. Schedule the
+-- native refresh on the UI thread after download work returns to the parent
+-- process so newly downloaded books appear without restarting KOReader.
+function OPDS:_refreshLibraryView()
+    local ui = self.ui
+    local file_chooser = ui and ui.file_chooser
+    if not file_chooser or type(file_chooser.refreshPath) ~= "function" then
+        return false
+    end
+
+    UIManager:nextTick(function()
+        if not self.ui or self.ui.file_chooser ~= file_chooser then
+            return
+        end
+
+        local ok, err = pcall(function()
+            if type(file_chooser.clearSortingCache) == "function" then
+                file_chooser:clearSortingCache()
+            end
+            file_chooser:refreshPath()
+        end)
+        if not ok then
+            logger.warn("Burrow Store: could not refresh library after download", err)
+        end
+    end)
+    return true
+end
+
 function OPDS:_createBrowserInstance()
-    return OPDSBrowser:new {
+    local browser = OPDSBrowser:new {
         servers = self.servers,
         downloads = self.downloads,
         settings = self.settings,
@@ -228,6 +259,7 @@ function OPDS:_createBrowserInstance()
         show_covers = true,
         _manager = self,
         file_downloaded_callback = function(file)
+            self:_refreshLibraryView()
             self:showFileDownloadedDialog(file)
         end,
         close_callback = function()
@@ -243,9 +275,26 @@ function OPDS:_createBrowserInstance()
                     self.ui.file_chooser:changeToPath(pathname, self.last_downloaded_file)
                 end
                 self.last_downloaded_file = nil
+            else
+                self:_refreshLibraryView()
             end
         end,
     }
+
+    -- Every Store sync entry point eventually calls this browser method,
+    -- including the visible Store menus and dispatcher/gesture sync actions.
+    -- Refresh only after that synchronous sync/download path returns so the
+    -- parent process sees the completed files before FileChooser rescans.
+    local original_check_sync = browser.checkSyncDownload
+    if type(original_check_sync) == "function" then
+        browser.checkSyncDownload = function(browser_self, ...)
+            local result = original_check_sync(browser_self, ...)
+            self:_refreshLibraryView()
+            return result
+        end
+    end
+
+    return browser
 end
 
 function OPDS:_startSyncFromDispatcher(force_sync)
