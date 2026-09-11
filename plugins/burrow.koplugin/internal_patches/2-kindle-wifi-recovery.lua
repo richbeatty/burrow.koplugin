@@ -58,12 +58,16 @@ function Module.apply()
     local original_connectivity_check = NetworkMgr.connectivityCheck
     local original_enable = NetworkMgr.enableWifi
     local original_disable = NetworkMgr.disableWifi
+    local original_toggle_on = NetworkMgr.toggleWifiOn
+    local original_toggle_off = NetworkMgr.toggleWifiOff
 
     if type(original_restore) ~= "function"
         or type(original_abort) ~= "function"
         or type(original_connectivity_check) ~= "function"
         or type(original_enable) ~= "function"
         or type(original_disable) ~= "function"
+        or type(original_toggle_on) ~= "function"
+        or type(original_toggle_off) ~= "function"
         or type(NetworkMgr.getNetworkList) ~= "function"
         or type(NetworkMgr.authenticateNetwork) ~= "function"
     then
@@ -232,6 +236,21 @@ function Module.apply()
             clearAutomaticRestore(self)
         end
         return original_disable(self, cb, interactive)
+    end
+
+    -- Burrow's Quick Settings button historically called toggleWifiOn/Off
+    -- without KOReader's interactive flag. Those functions are user-facing
+    -- toggles, and KOReader's own callers are also explicit user actions, so on
+    -- Kindle treat an omitted flag as interactive while preserving any caller
+    -- that deliberately passes false.
+    function NetworkMgr:toggleWifiOn(complete_callback, long_press, interactive)
+        if interactive == nil then interactive = true end
+        return original_toggle_on(self, complete_callback, long_press, interactive)
+    end
+
+    function NetworkMgr:toggleWifiOff(complete_callback, interactive)
+        if interactive == nil then interactive = true end
+        return original_toggle_off(self, complete_callback, interactive)
     end
 
     NetworkMgr._burrow_kindle_wifi_recovery_v1 = true
