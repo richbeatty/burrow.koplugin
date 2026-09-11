@@ -14,12 +14,13 @@ function Module.apply()
 
     local ReaderPageMap = require("apps/reader/modules/readerpagemap")
     local logger = require("logger")
-    if ReaderPageMap._burrow_stable_page_numbers_v2 then
+    if ReaderPageMap._burrow_stable_page_numbers_v3 then
         Module.applied = true
         return true
     end
     ReaderPageMap._burrow_stable_page_numbers_v1 = true
     ReaderPageMap._burrow_stable_page_numbers_v2 = true
+    ReaderPageMap._burrow_stable_page_numbers_v3 = true
 
     local DEFAULT_CHARS_PER_PAGE = 1500
     local original_onReadSettings = ReaderPageMap.onReadSettings
@@ -74,19 +75,21 @@ function Module.apply()
         end
     end
 
-    -- A publisher map is considered broken only when its anchors are objectively
-    -- collapsed. Labels themselves are not inspected: Roman numerals, duplicate
-    -- labels, unusual numbering schemes and partial front matter are all valid.
+    -- Publisher maps are kept unless their anchors are objectively unusable.
+    -- Labels themselves are never judged: Roman numerals, duplicate labels,
+    -- unusual numbering schemes and partial front matter are all valid.
     --
-    -- We deliberately require a large map and document. Then we use two
-    -- independent, conservative signals:
-    --   1. almost all map entries literally reuse one or two XPointers; or
-    --   2. anchors sampled across the entire map all resolve into essentially the
+    -- We deliberately require a large map and document, then use three
+    -- conservative signals:
+    --   1. ordered anchors make a large backwards jump through the rendered
+    --      document, which violates page-list reading order;
+    --   2. almost all map entries literally reuse one or two XPointers; or
+    --   3. anchors sampled across the entire map resolve into essentially the
     --      same tiny rendered-page span.
     --
-    -- This catches maps that report hundreds of entries while every reading
-    -- position resolves to one early label, without second-guessing healthy maps.
-    local function publisherMapClearlyCollapsed(document)
+    -- This catches malformed publisher maps without second-guessing healthy
+    -- print pagination.
+    local function publisherMapClearlyBroken(document)
         local ok, page_list = pcall(document.getPageMap, document)
         if not ok or type(page_list) ~= "table" then
             return false
@@ -101,6 +104,33 @@ function Module.apply()
         rendered_pages = ok_pages and tonumber(rendered_pages) or 0
         if not rendered_pages or rendered_pages < 40 then
             return false
+        end
+
+        -- EPUB page-list targets are required to follow reading order. Allow
+        -- equal pages and small layout noise, but a substantial backwards jump
+        -- means the map cannot be used safely by CRengine's ordered lookup.
+        local backward_limit = math.max(8, math.floor(rendered_pages * 0.10))
+        local previous_page
+        local previous_index
+        for index, entry in ipairs(page_list) do
+            local xp = type(entry) == "table" and entry.xpointer or nil
+            if type(xp) == "string" and xp ~= "" then
+                local resolved_ok, page = pcall(document.getPageFromXPointer, document, xp)
+                page = resolved_ok and tonumber(page) or nil
+                if page then
+                    if previous_page and previous_page - page >= backward_limit then
+                        return true, string.format(
+                            "page-map anchor %d resolves to rendered page %d after anchor %d resolved to page %d",
+                            index,
+                            page,
+                            previous_index,
+                            previous_page
+                        )
+                    end
+                    previous_page = page
+                    previous_index = index
+                end
+            end
         end
 
         local xpointer_count = 0
@@ -190,17 +220,17 @@ function Module.apply()
         local document = self.ui.document
 
         -- KOReader normally prefers a publisher-supplied page map. Keep that
-        -- preference unless the publisher map is clearly collapsed. A synthetic
+        -- preference unless the publisher map is clearly broken. A synthetic
         -- map already selected by the user is never validated or replaced here.
         if self.has_pagemap
             and self.has_pagemap_document_provided
             and not self.chars_per_synthetic_page
         then
-            local collapsed, reason = publisherMapClearlyCollapsed(document)
-            if collapsed then
+            local broken, reason = publisherMapClearlyBroken(document)
+            if broken then
                 local chars = getSyntheticChars(self)
                 logger.warn(
-                    "Burrow stable page numbers: publisher page map is collapsed; using synthetic map instead:",
+                    "Burrow stable page numbers: publisher page map is broken; using synthetic map instead:",
                     reason
                 )
                 -- The publisher map was already registered by KOReader's
