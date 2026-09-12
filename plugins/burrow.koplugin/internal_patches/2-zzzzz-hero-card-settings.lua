@@ -33,10 +33,9 @@ local function applyHeroCardSettings(plugin)
 
     local HERO_BOOK_SPACING_SETTING = "burrow_hero_book_spacing"
     local DEFAULT_HERO_BOOK_SPACING = 0
-    -- The current hero keeps roughly thirteen scaled pixels of clear space
-    -- below the card. Stop just short of consuming that safety margin so a
-    -- negative value can tighten the layout without allowing card/grid overlap.
-    local MIN_HERO_BOOK_SPACING = -12
+    -- Match the signed range used by the existing horizontal and vertical
+    -- cover-spacing controls so all three spacing controls behave consistently.
+    local MIN_HERO_BOOK_SPACING = -30
     local MAX_HERO_BOOK_SPACING = 30
 
     local function round(value)
@@ -113,7 +112,7 @@ local function applyHeroCardSettings(plugin)
     -- Keep the existing hero, card size, cover grid, and touch geometry intact.
     -- We only adjust the vertical height reported by the composite hero titlebar.
     -- Positive values reserve extra blank room below the card; negative values
-    -- consume only the card's existing safe bottom margin and bring row one up.
+    -- reduce the reserved height and bring row one closer to the hero.
     local function installHeroBookSpacing()
         local titlebar_index = findUpvalueIndex(CoverMenu.setupLayout, "TitleBar")
         local HeroTitleBar = titlebar_index
