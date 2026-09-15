@@ -114,6 +114,37 @@ end
 -- the loader but does not prevent the core library from starting.
 BurrowLoader:loadEarlyModules()
 
+-- Mixed-image EPUBs need separate explicit light and dark ornament caches.
+-- Keep the already-tested spine-priority loader untouched and layer a guarded
+-- performance helper on top: before full-book work begins, prepare the nearby
+-- opposite-tone window so a later light/dark switch has something ready to use.
+local prewarm_ok, EpubDualTonePrewarm = pcall(
+    require,
+    "burrow_epub_dual_tone_prewarm"
+)
+if prewarm_ok
+    and type(EpubDualTonePrewarm) == "table"
+    and type(EpubDualTonePrewarm.apply) == "function"
+then
+    local apply_ok, applied, apply_error = pcall(
+        EpubDualTonePrewarm.apply,
+        EpubDualTonePrewarm
+    )
+    if not apply_ok or applied == false then
+        logger.warn(
+            burrow_debug.logprefix,
+            "Dual-tone EPUB prewarm could not be applied",
+            apply_ok and apply_error or applied
+        )
+    end
+else
+    logger.warn(
+        burrow_debug.logprefix,
+        "Dual-tone EPUB prewarm could not be loaded",
+        EpubDualTonePrewarm
+    )
+end
+
 local Burrow = WidgetContainer:extend {
     name = "burrow",
 }
