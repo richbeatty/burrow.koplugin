@@ -173,7 +173,11 @@ local function schedulerWrapper(original)
         )
     end
 
+    -- scheduleCoroutine is a shared upvalue in the ornament module. Mark both
+    -- directions so later closures that see the already-wrapped value do not
+    -- wrap it a second or third time.
     SCHEDULER_WRAPPERS[original] = wrapped
+    SCHEDULER_WRAPPERS[wrapped] = wrapped
     return wrapped
 end
 
