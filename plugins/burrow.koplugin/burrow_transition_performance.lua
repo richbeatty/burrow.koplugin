@@ -1,4 +1,3 @@
-local Device = require("device")
 local logger = require("logger")
 local time = require("ui/time")
 local UIManager = require("ui/uimanager")
@@ -12,20 +11,9 @@ local FULL_BUSY_TICKS = 8
 local FULL_IDLE_TICKS = 3
 local PROFILE_BUSY_TICKS = 4
 local PROFILE_IDLE_TICKS = 2
-local KINDLE_RERENDER_RETRY = 0.35
-local KINDLE_LIBRARY_IDLE_DELAY = 2.0
-local KINDLE_LIBRARY_IDLE_RETRIES = 5
 
 local last_reader_activity = time.now()
 local SCHEDULER_WRAPPERS = {}
-
-local function pack(...)
-    return { n = select("#", ...), ... }
-end
-
-local function unpackPacked(values)
-    return unpack(values, 1, values.n or #values)
-end
 
 local function markReaderActivity()
     last_reader_activity = time.now()
@@ -61,12 +49,6 @@ local function activeReader()
 end
 
 local function installReopenCacheDefault()
-    -- A larger persistent CRengine cache helps Android and faster Linux-class
-    -- devices, but Kindle storage is slow enough that increasing the cache can
-    -- work against transition latency. Leave Kindle on KOReader's own default
-    -- unless the user explicitly chose another size.
-    if Device:isKindle() then return end
-
     if G_reader_settings:readSetting("cre_disk_cache_max_size") == nil then
         G_reader_settings:saveSetting("cre_disk_cache_max_size", DEFAULT_REOPEN_CACHE_MB)
         logger.info(
@@ -78,11 +60,6 @@ local function installReopenCacheDefault()
 end
 
 local function scheduleEngineWarmup()
-    -- CRengine initialization is useful hidden work on Android, but on slower
-    -- Kindles it can monopolize the UI thread while fonts and dictionaries are
-    -- registered. Let the first real document initialize it naturally there.
-    if Device:isKindle() then return end
-
     local attempts = 0
 
     local function tryWarm()
@@ -332,236 +309,6 @@ local function installCoverMenuClosePatch()
     return true
 end
 
-local function callWithoutDocCacheSerialize(callback)
-    local ok_cache, DocCache = pcall(require, "document/doccache")
-    if not ok_cache or type(DocCache) ~= "table" or type(DocCache.serialize) ~= "function" then
-        return callback()
-    end
-
-    local originalSerialize = DocCache.serialize
-    DocCache.serialize = function() return end
-    local results = pack(pcall(callback))
-    DocCache.serialize = originalSerialize
-
-    local ok = results[1]
-    table.remove(results, 1)
-    results.n = results.n - 1
-    if not ok then error(results[1]) end
-    return unpackPacked(results)
-end
-
-local function isBurrowOrnamentDocument(document)
-    return type(document) == "table"
-        and type(document._burrow_epub_ornaments_source_file) == "string"
-end
-
-local function installKindleOnePassDocumentGc()
-    if not Device:isKindle() then return true end
-
-    local ok_registry, DocumentRegistry = pcall(require, "document/documentregistry")
-    if not ok_registry or type(DocumentRegistry) ~= "table" then
-        return false, "DocumentRegistry unavailable"
-    end
-    if DocumentRegistry._burrow_kindle_one_pass_gc_v1 then return true end
-
-    local originalOpenDocument = DocumentRegistry.openDocument
-    if type(originalOpenDocument) ~= "function" then
-        return false, "DocumentRegistry openDocument unavailable"
-    end
-
-    function DocumentRegistry:openDocument(file, provider)
-        -- KOReader starts every open with two consecutive full Lua collections.
-        -- On Kindle the second pass can be a visible stall. Keep the first full
-        -- collection for memory safety, but turn only that immediately-following
-        -- second no-argument call into a no-op. Restore the global before the
-        -- provider itself starts opening the document.
-        local originalCollect = _G.collectgarbage
-        local noargCalls = 0
-        local shim
-        shim = function(option, arg)
-            if option == nil then
-                noargCalls = noargCalls + 1
-                if noargCalls == 1 then
-                    return originalCollect()
-                elseif noargCalls == 2 then
-                    _G.collectgarbage = originalCollect
-                    return 0
-                end
-            end
-            return originalCollect(option, arg)
-        end
-
-        _G.collectgarbage = shim
-        local results = pack(pcall(originalOpenDocument, self, file, provider))
-        if _G.collectgarbage == shim then
-            _G.collectgarbage = originalCollect
-        end
-
-        local ok = results[1]
-        table.remove(results, 1)
-        results.n = results.n - 1
-        if not ok then error(results[1]) end
-        return unpackPacked(results)
-    end
-
-    DocumentRegistry._burrow_kindle_one_pass_gc_v1 = true
-    return true
-end
-
-local function installKindleReaderTransitions()
-    if not Device:isKindle() then return true end
-
-    local ok_reader, ReaderUI = pcall(require, "apps/reader/readerui")
-    if not ok_reader or type(ReaderUI) ~= "table" then
-        return false, "ReaderUI unavailable"
-    end
-    if ReaderUI._burrow_kindle_transition_v1 then return true end
-
-    local originalReloadDocument = ReaderUI.reloadDocument
-    local originalOnHome = ReaderUI.onHome
-    if type(originalReloadDocument) ~= "function" or type(originalOnHome) ~= "function" then
-        return false, "Reader transition methods unavailable"
-    end
-
-    local function hasRunningRerender(reader)
-        local rolling = reader and reader.rolling
-        return type(rolling) == "table"
-            and rolling._current_rerendering_pid ~= nil
-    end
-
-    local function scheduleReloadRetry(reader)
-        if reader._burrow_kindle_reload_retry_scheduled then return end
-        reader._burrow_kindle_reload_retry_scheduled = true
-
-        UIManager:scheduleIn(KINDLE_RERENDER_RETRY, function()
-            reader._burrow_kindle_reload_retry_scheduled = nil
-
-            if ReaderUI.instance ~= reader
-                or reader.tearing_down
-                or not reader.document
-            then
-                reader._burrow_kindle_reload_pending = nil
-                return
-            end
-
-            if hasRunningRerender(reader) then
-                scheduleReloadRetry(reader)
-                return
-            end
-
-            local pending = reader._burrow_kindle_reload_pending
-            reader._burrow_kindle_reload_pending = nil
-            if pending then
-                reader._burrow_kindle_reload_ready = true
-                reader:reloadDocument(unpackPacked(pending))
-            end
-        end)
-    end
-
-    function ReaderUI:reloadDocument(...)
-        local burrow_epub = isBurrowOrnamentDocument(self.document)
-
-        -- ReaderRolling may already have a large CRengine rerender subprocess.
-        -- Its close lifecycle waits for that child before a reload can continue.
-        -- Do not start a Burrow ornament reload into that blocking window.
-        if burrow_epub
-            and not self._burrow_kindle_reload_ready
-            and hasRunningRerender(self)
-        then
-            self._burrow_kindle_reload_pending = pack(...)
-            scheduleReloadRetry(self)
-            logger.dbg("[Burrow performance] Deferred Kindle reload behind active CRengine rerender")
-            return true
-        end
-
-        self._burrow_kindle_reload_ready = nil
-
-        if burrow_epub then
-            -- This reload immediately reopens the same reading position. Persisting
-            -- KOReader's current-page bitmap to disk first adds Kindle I/O without
-            -- helping the replacement ReaderUI, so skip only that cache write.
-            return callWithoutDocCacheSerialize(function()
-                return originalReloadDocument(self, ...)
-            end)
-        end
-
-        return originalReloadDocument(self, ...)
-    end
-
-    local function deferHomeSerialization(docPath, serializer, docCache)
-        local attempts = 0
-        local lastInput = UIManager:getTime()
-        local watcher = function()
-            lastInput = UIManager:getTime()
-        end
-        UIManager.event_hook:register("InputEvent", watcher)
-
-        local function finish()
-            UIManager.event_hook:unregister("InputEvent", watcher)
-        end
-
-        local function trySerialize()
-            attempts = attempts + 1
-            if ReaderUI.instance then
-                finish()
-                return
-            end
-
-            local idle_for = UIManager:getTime() - lastInput
-            if idle_for < time.s(KINDLE_LIBRARY_IDLE_DELAY) then
-                if attempts < KINDLE_LIBRARY_IDLE_RETRIES then
-                    UIManager:scheduleIn(1.0, trySerialize)
-                else
-                    finish()
-                end
-                return
-            end
-
-            finish()
-            local ok, err = pcall(serializer, docCache, docPath)
-            if not ok then
-                logger.warn("[Burrow performance] Deferred Kindle page-cache save failed", err)
-            end
-        end
-
-        UIManager:scheduleIn(KINDLE_LIBRARY_IDLE_DELAY, trySerialize)
-    end
-
-    function ReaderUI:onHome(...)
-        local document = self.document
-        if not document or document.provider ~= "crengine" then
-            return originalOnHome(self, ...)
-        end
-
-        local ok_cache, DocCache = pcall(require, "document/doccache")
-        if not ok_cache or type(DocCache) ~= "table" or type(DocCache.serialize) ~= "function" then
-            return originalOnHome(self, ...)
-        end
-
-        local originalSerialize = DocCache.serialize
-        local deferredPath
-        DocCache.serialize = function(_, path)
-            deferredPath = path
-        end
-
-        local results = pack(pcall(originalOnHome, self, ...))
-        DocCache.serialize = originalSerialize
-
-        if deferredPath then
-            deferHomeSerialization(deferredPath, originalSerialize, DocCache)
-        end
-
-        local ok = results[1]
-        table.remove(results, 1)
-        results.n = results.n - 1
-        if not ok then error(results[1]) end
-        return unpackPacked(results)
-    end
-
-    ReaderUI._burrow_kindle_transition_v1 = true
-    return true
-end
-
 local function attachActivityHooks(plugin_class)
     if type(plugin_class) ~= "table" then
         return false, "Burrow plugin class unavailable"
@@ -598,16 +345,6 @@ function Module.apply(plugin_class)
     local close_ok, close_err = installCoverMenuClosePatch()
     if not close_ok then
         logger.warn("[Burrow performance] Library close optimization unavailable", close_err)
-    end
-
-    local gc_ok, gc_err = installKindleOnePassDocumentGc()
-    if not gc_ok then
-        logger.warn("[Burrow performance] Kindle document-open GC optimization unavailable", gc_err)
-    end
-
-    local kindle_ok, kindle_err = installKindleReaderTransitions()
-    if not kindle_ok then
-        logger.warn("[Burrow performance] Kindle reader transition optimization unavailable", kindle_err)
     end
 
     local hook_ok, hook_err = attachActivityHooks(plugin_class)
