@@ -263,6 +263,38 @@ end
 -- failed group is disabled without preventing unrelated Burrow features.
 BurrowLoader:applyInstanceModules(Burrow)
 
+-- Transition performance is applied only after the established library runtime
+-- is in place. It warms CRengine while the library is idle, keeps the native
+-- reopen cache larger by default, moves deliberate Lua GC out of the immediate
+-- book-opening path, and makes distant ornament work yield to active reading.
+local transition_ok, TransitionPerformance = pcall(
+    require,
+    "burrow_transition_performance"
+)
+if transition_ok
+    and type(TransitionPerformance) == "table"
+    and type(TransitionPerformance.apply) == "function"
+then
+    local apply_ok, applied, apply_error = pcall(
+        TransitionPerformance.apply,
+        TransitionPerformance,
+        Burrow
+    )
+    if not apply_ok or applied == false then
+        logger.warn(
+            burrow_debug.logprefix,
+            "Transition performance layer could not be applied",
+            apply_ok and apply_error or applied
+        )
+    end
+else
+    logger.warn(
+        burrow_debug.logprefix,
+        "Transition performance layer could not be loaded",
+        TransitionPerformance
+    )
+end
+
 -- Sleep-screen crop-to-fill is intentionally independent from the soft palette
 -- and library features. Keep it isolated so a device-specific screensaver
 -- failure cannot prevent Burrow from starting.
