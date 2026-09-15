@@ -145,6 +145,33 @@ else
     )
 end
 
+-- Keep reader latency work separate from the established ornament engine.
+-- This layer only changes scheduling and cache lookup behavior: repeated cache
+-- identity hashing is memoized, ornament workers yield the CPU when the reader
+-- closes, and an already-prepared light/dark palette can be applied promptly.
+local latency_ok, ReaderLatency = pcall(require, "burrow_reader_latency")
+if latency_ok
+    and type(ReaderLatency) == "table"
+    and type(ReaderLatency.apply) == "function"
+then
+    local apply_ok, applied, apply_error = pcall(ReaderLatency.apply, ReaderLatency)
+    if not apply_ok or applied == false then
+        latency_ok = false
+        logger.warn(
+            burrow_debug.logprefix,
+            "Reader latency performance layer could not be applied",
+            apply_ok and apply_error or applied
+        )
+    end
+else
+    latency_ok = false
+    logger.warn(
+        burrow_debug.logprefix,
+        "Reader latency performance layer could not be loaded",
+        ReaderLatency
+    )
+end
+
 local Burrow = WidgetContainer:extend {
     name = "burrow",
 }
@@ -162,6 +189,22 @@ then
         logger.warn(
             burrow_debug.logprefix,
             "Decorative EPUB Night Mode observer could not attach",
+            err
+        )
+    end
+end
+
+-- Attach after the ornament observer so explicit light/dark requests can react
+-- to its normal cache scheduling without replacing KOReader's Night Mode owner.
+if latency_ok
+    and type(ReaderLatency) == "table"
+    and type(ReaderLatency.attachPluginClass) == "function"
+then
+    local ok, err = pcall(ReaderLatency.attachPluginClass, Burrow)
+    if not ok then
+        logger.warn(
+            burrow_debug.logprefix,
+            "Reader latency Night Mode helper could not attach",
             err
         )
     end
