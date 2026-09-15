@@ -4,6 +4,17 @@ All notable changes to Burrow will be documented here.
 
 ## [Unreleased]
 
+## [0.4.11] - 2026-09-15
+
+### Changed
+
+- Promoted the user-tested 0.4.11-beta.4 tree to stable without runtime behavior changes.
+- Prepared nearby opposite-tone EPUB ornament caches ahead of distant full-book work for light/dark switching.
+- Made ornament background work reader-aware, memoized source identities, and prioritized prepared palette changes.
+- Reduced deliberate garbage-collection work during library-to-reader transitions and throttled distant ornament jobs.
+- Added an isolated Kindle transition layer that avoids general engine warmup/cache-default changes, coalesces ornament reloads behind active rerendering, and defers disposable page-bitmap serialization after returning Home.
+- Removed a redundant global-settings flush during reader presentation capture; ReaderUI retains the normal save lifecycle.
+
 ## [0.4.8-beta.1] - 2026-09-10
 
 ### Added
