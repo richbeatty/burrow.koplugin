@@ -56,9 +56,10 @@ end
 local function saveProfiles(profiles)
     profiles.version = Inheritance.PROFILE_VERSION
     G_reader_settings:saveSetting(Inheritance.PROFILE_KEY, profiles)
-    if type(G_reader_settings.flush) == "function" then
-        G_reader_settings:flush()
-    end
+    -- captureProfile() runs from ReaderUI's SaveSettings event. KOReader flushes
+    -- G_reader_settings immediately after all SaveSettings listeners finish, so
+    -- flushing here only writes the same settings file twice during every reader
+    -- close/reload. Leave ownership of that synchronous disk write to ReaderUI.
 end
 
 local function captureProfile(ui)

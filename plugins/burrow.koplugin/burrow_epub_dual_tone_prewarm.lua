@@ -1,4 +1,36 @@
 local logger = require("logger")
+local Device = require("device")
+
+-- Kindle needs a different latency strategy from Android. Load this before
+-- main.lua applies the general transition module so the Kindle helper can
+-- disable only the general CRengine warmup/cache defaults while preserving the
+-- rest of beta.3's tested transition work.
+if Device:isKindle() then
+    local kindle_ok, KindleTransition = pcall(
+        require,
+        "burrow_kindle_transition_performance"
+    )
+    if kindle_ok
+        and type(KindleTransition) == "table"
+        and type(KindleTransition.apply) == "function"
+    then
+        local apply_ok, applied, apply_error = pcall(
+            KindleTransition.apply,
+            KindleTransition
+        )
+        if not apply_ok or applied == false then
+            logger.warn(
+                "[Burrow performance] Kindle transition layer could not be applied",
+                apply_ok and apply_error or applied
+            )
+        end
+    else
+        logger.warn(
+            "[Burrow performance] Kindle transition layer could not be loaded",
+            KindleTransition
+        )
+    end
+end
 
 local Module = {}
 
