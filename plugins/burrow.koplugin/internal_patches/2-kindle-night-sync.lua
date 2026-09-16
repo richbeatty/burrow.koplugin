@@ -96,9 +96,9 @@ local function applyFastEinkPageTurns()
 end
 
 local function applyKindleWifiRecovery()
-    -- Keep the Wi-Fi recovery implementation in its own file and guard it here.
-    -- A networking compatibility failure must never disable Kindle Night Mode
-    -- synchronization or any larger Burrow subsystem.
+    -- Install Kindle Wi-Fi recovery before Night Mode synchronization. A Night
+    -- Mode compatibility problem must never prevent the networking wrappers from
+    -- being installed, because the two features are unrelated.
     local directory = patchDirectory()
     if not directory then return end
 
@@ -119,11 +119,18 @@ end
 function Module.apply()
     if Module.applied then return true end
 
+    -- Wi-Fi recovery is deliberately established first. Even if Kindle Night
+    -- Mode synchronization is unavailable on this KOReader/device combination,
+    -- the loader must not quarantine or skip the independent Wi-Fi behavior.
+    applyKindleWifiRecovery()
+
     local ok, err = Module.sync()
-    if not ok then return false, err end
+    if not ok then
+        local logger = require("logger")
+        logger.warn("[Burrow] Kindle Night Mode synchronization unavailable; continuing", err)
+    end
 
     applyFastEinkPageTurns()
-    applyKindleWifiRecovery()
 
     Module.applied = true
     return true
