@@ -37,6 +37,8 @@ package.loaded[MODULE_KEY] = Module
     - Manual Wi-Fi actions remain KOReader's normal visible/interactive path.
     - A failed automatic restore does not erase the user's prior "Wi-Fi was on"
       intent, so a later resume can try again when a known network is available.
+    - A direct user Wi-Fi ON action also preserves that intent even when the
+      Kindle is temporarily away from every saved network.
     - Explicit/manual Wi-Fi off still clears that intent through KOReader.
     - Only one silent scan is scheduled per restore call, with a short cooldown
       to avoid duplicate work during rapid lifecycle events.
@@ -57,7 +59,7 @@ function Module.apply()
     local UIManager = require("ui/uimanager")
     local logger = require("logger")
 
-    if NetworkMgr._burrow_kindle_wifi_recovery_v2 then
+    if NetworkMgr._burrow_kindle_wifi_recovery_v3 then
         Module.applied = true
         return true
     end
@@ -103,26 +105,28 @@ function Module.apply()
     end
 
     local function isKOSyncSuspendNetworkingCall()
-        -- This helper is called from Burrow's NetworkMgr:willRerunWhenOnline
-        -- wrapper, so the KOSync updateProgress frame is three levels up:
-        -- KOSync:updateProgress -> willRerunWhenOnline -> this helper.
-        -- Require both the KOSync source file and the named on_suspend=true local
-        -- so normal network-required actions, manual Push/Pull, Store, updater,
-        -- and other plugins keep KOReader's native behavior.
-        local info = debug.getinfo(3, "S")
-        local source = info and info.source or ""
-        if not source:find("plugins/kosync%.koplugin/main%.lua", 1, false) then
-            return false
-        end
-
-        local index = 1
-        while true do
-            local name, value = debug.getlocal(3, index)
-            if not name then break end
-            if name == "on_suspend" then
-                return value == true
+        -- The exact stack depth between KOSync:updateProgress and this helper can
+        -- change when another narrowly-scoped wrapper is added. Scan only a small
+        -- bounded section of the stack and still require both the KOSync source
+        -- file and its named on_suspend=true local. This keeps the exception
+        -- limited to suspend autosync while leaving manual Push/Pull, Store,
+        -- updater, and every other network-required action on KOReader's native
+        -- path.
+        for level = 3, 8 do
+            local info = debug.getinfo(level, "S")
+            if not info then break end
+            local source = info.source or ""
+            if source:find("plugins/kosync%.koplugin/main%.lua", 1, false) then
+                local index = 1
+                while true do
+                    local name, value = debug.getlocal(level, index)
+                    if not name then break end
+                    if name == "on_suspend" then
+                        return value == true
+                    end
+                    index = index + 1
+                end
             end
-            index = index + 1
         end
 
         return false
@@ -232,21 +236,27 @@ function Module.apply()
         local preserve_auto_restore_intent = self._burrow_kindle_auto_restore_active == true
             and self.wifi_was_on == true
             and G_reader_settings:isTrue("auto_restore_wifi")
+        local preserve_user_on_intent = self._burrow_kindle_user_wifi_on_intent == true
 
         cancelScheduledRecovery(self)
         local result = original_abort(self, ...)
 
-        if preserve_auto_restore_intent then
-            -- KOReader normally clears wifi_was_on after any failed connection.
-            -- For an automatic Kindle resume attempt, being temporarily out of
-            -- range should not be treated like an explicit request to keep Wi-Fi
-            -- off forever. Preserve only the intent flag; all other native abort
-            -- behavior remains unchanged.
+        if preserve_auto_restore_intent or preserve_user_on_intent then
+            -- KOReader normally clears wifi_was_on after a failed connection.
+            -- That is correct for an abandoned background attempt, but it should
+            -- not turn a temporary out-of-range condition into a permanent Wi-Fi
+            -- OFF preference after either automatic restore or an explicit user
+            -- Wi-Fi ON action.
             self.wifi_was_on = true
             G_reader_settings:makeTrue("wifi_was_on")
-            logger.dbg("Burrow Kindle Wi-Fi recovery: automatic failure preserved Wi-Fi restore intent")
+            if preserve_user_on_intent then
+                logger.dbg("Burrow Kindle Wi-Fi recovery: failed user Wi-Fi ON preserved reconnect intent")
+            else
+                logger.dbg("Burrow Kindle Wi-Fi recovery: automatic failure preserved Wi-Fi restore intent")
+            end
         end
 
+        self._burrow_kindle_user_wifi_on_intent = false
         self._burrow_kindle_auto_restore_active = false
         return result
     end
@@ -254,8 +264,11 @@ function Module.apply()
     function NetworkMgr:connectivityCheck(iter, callback, widget)
         local result = original_connectivity_check(self, iter, callback, widget)
 
-        if self._burrow_kindle_auto_restore_active and self.is_wifi_on and self.is_connected then
-            clearAutomaticRestore(self)
+        if self.is_wifi_on and self.is_connected then
+            self._burrow_kindle_user_wifi_on_intent = false
+            if self._burrow_kindle_auto_restore_active then
+                clearAutomaticRestore(self)
+            end
         end
 
         return result
@@ -274,6 +287,7 @@ function Module.apply()
             -- Explicit Wi-Fi off must remain explicit. KOReader's native
             -- disableWifi will clear wifi_was_on when interactive == true.
             clearAutomaticRestore(self)
+            self._burrow_kindle_user_wifi_on_intent = false
         end
         return original_disable(self, cb, interactive)
     end
@@ -282,9 +296,15 @@ function Module.apply()
     -- without KOReader's interactive flag. Those functions are user-facing
     -- toggles, and KOReader's own callers are also explicit user actions, so on
     -- Kindle treat an omitted flag as interactive while preserving any caller
-    -- that deliberately passes false.
+    -- that deliberately passes false. A direct Wi-Fi ON also records the user's
+    -- intent before the scan begins so an out-of-range failure cannot erase it.
     function NetworkMgr:toggleWifiOn(complete_callback, long_press, interactive)
-        if interactive == nil then interactive = true end
+        if interactive == nil then
+            self._burrow_kindle_user_wifi_on_intent = true
+            self.wifi_was_on = true
+            G_reader_settings:makeTrue("wifi_was_on")
+            interactive = true
+        end
         return original_toggle_on(self, complete_callback, long_press, interactive)
     end
 
@@ -322,6 +342,7 @@ function Module.apply()
 
     NetworkMgr._burrow_kindle_wifi_recovery_v1 = true
     NetworkMgr._burrow_kindle_wifi_recovery_v2 = true
+    NetworkMgr._burrow_kindle_wifi_recovery_v3 = true
     Module.applied = true
     logger.info("Burrow Kindle silent Wi-Fi recovery loaded")
     return true
