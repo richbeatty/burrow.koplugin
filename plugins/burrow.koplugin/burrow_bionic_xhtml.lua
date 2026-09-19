@@ -52,11 +52,12 @@ local function isWordChar(ch)
     return true
 end
 
-local function bionicizeText(text)
+local function bionicizeText(text, cooperate)
     if not text or text == "" then return text end
     local chars = util.splitToChars(text)
     local out = {}
     local i = 1
+    local next_yield = 512
     while i <= #chars do
         if chars[i] == "&" then
             local entity = { chars[i] }
@@ -93,6 +94,14 @@ local function bionicizeText(text)
             end
             out[#out + 1] = '<b class="burrow-bionic">' .. prefix .. '</b>' .. suffix
         end
+
+        -- Full-book Bionic cache generation runs cooperatively on slower e-ink
+        -- devices. Yield inside large text nodes instead of making a single
+        -- chapter transformation monopolize KOReader's event loop.
+        if cooperate and i >= next_yield then
+            cooperate()
+            next_yield = i + 512
+        end
     end
     return table.concat(out)
 end
@@ -123,13 +132,14 @@ local function tagInfo(tag)
     return name, closing, selfClosing
 end
 
-function Transformer.process(source)
+function Transformer.process(source, cooperate)
     if not source or source == "" then return source end
     local out = {}
     local text = {}
     local stack = {}
     local opaqueDepth = 0
     local i = 1
+    local next_yield = 16384
     local lowerSource
 
     local function flushText()
@@ -139,7 +149,7 @@ function Transformer.process(source)
         if opaqueDepth > 0 then
             out[#out + 1] = chunk
         else
-            out[#out + 1] = bionicizeText(chunk)
+            out[#out + 1] = bionicizeText(chunk, cooperate)
         end
     end
 
@@ -203,6 +213,11 @@ function Transformer.process(source)
                     end
                 end
             end
+        end
+
+        if cooperate and i >= next_yield then
+            cooperate()
+            next_yield = i + 16384
         end
     end
     flushText()
