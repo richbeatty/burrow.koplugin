@@ -4,6 +4,21 @@ All notable changes to Burrow will be documented here.
 
 ## [Unreleased]
 
+## [0.4.12-beta.3] - 2026-09-19
+
+### Changed
+
+- Bionic Reading now opens uncached EPUBs from a small spine-priority hot shadow centered on the saved/current reading position instead of synchronously transforming the entire book before the reader appears.
+- Complete Bionic shadows are generated cooperatively in the background, yielding inside large XHTML transforms and between EPUB entries so slower Kindles remain responsive.
+- The temporary hot shadow keeps nearby spine items fully Bionic and replaces unprepared reading sections with a lightweight preparation page, so Bionic mode never exposes ordinary untransformed book text.
+- When the complete shadow is ready, Burrow waits for an idle reader moment, reloads the completed Bionic document, restores the exact Bionic XPointer when possible, and removes the temporary hot cache.
+- Bionic shadow generation avoids recompressing already-compressed binary assets, reducing Kindle CPU work during cache creation.
+
+### Fixed
+
+- Light/dark mode changes in an active Bionic book now stay on KOReader's native repaint path instead of triggering decorative-EPUB shadow swaps and full CRengine reload/reflow cycles.
+- Bionic Reading no longer falls back to displaying the ordinary EPUB when its Bionic-only hot cache cannot be prepared.
+
 ## [0.4.11] - 2026-09-15
 
 ### Changed
