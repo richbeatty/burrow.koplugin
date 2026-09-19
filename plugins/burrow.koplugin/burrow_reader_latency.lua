@@ -468,6 +468,11 @@ function Module.attachPluginClass(plugin_class)
         local reader = plugin and plugin.ui or nil
         local document = reader and reader.document or nil
         if not document or reader.tearing_down then return end
+        if document._burrow_bionic_active == true then
+            -- Bionic text does not change between light and dark mode. Do not
+            -- let the ornament latency layer schedule a document reload.
+            return
+        end
         if document._burrow_epub_ornaments_fast_adaptive == true then return end
 
         local sourcePath = originalSourcePath(document)
