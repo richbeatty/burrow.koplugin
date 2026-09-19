@@ -806,7 +806,7 @@ function Bionic.toggleFromQuickSettings(touchMenu)
 
     if not reader or not reader.document then return nowEnabled end
 
-    local file = reader.document.file
+    local file = reader.document._burrow_bionic_original_file or reader.document.file
     if not Bionic.isSupportedFile(file) then
         UIManager:nextTick(function()
             UIManager:show(InfoMessage:new{
@@ -827,6 +827,9 @@ function Bionic.toggleFromQuickSettings(touchMenu)
         UIManager:forceRePaint()
 
         UIManager:scheduleIn(0.05, function()
+            if nowEnabled then
+                Bionic.setOpenProgressHint(file, savedPercent)
+            end
             reader:reloadDocument(nil, true, function(reopenedReader)
                 -- First get close using layout-independent relative progress.
                 restoreReadingPercent(reopenedReader, savedPercent)
