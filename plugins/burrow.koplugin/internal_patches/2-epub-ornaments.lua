@@ -221,8 +221,12 @@ function Module.apply()
         function CreDocument:loadDocument(fullDocument)
             if self._loaded
                 or fullDocument == false
-                or (self._burrow_epub_ornament_reader_context ~= true
-                    and self._burrow_bionic_reader_context ~= true)
+                -- Bionic shadows are mode-independent text transforms. Keep
+                -- them on KOReader's native light/dark paint path so changing
+                -- Night Mode never swaps or reloads the Bionic EPUB.
+                or (self._burrow_bionic_reader_context == true
+                    and G_reader_settings:isTrue("burrow_bionic_reading"))
+                or self._burrow_epub_ornament_reader_context ~= true
                 or not G_reader_settings:isTrue(ORNAMENT_SETTING)
                 or hasUserReaderPalette()
                 or not isEpub(self.file)
@@ -399,6 +403,7 @@ function Module.attachPluginClass(plugin_class)
             local reader = plugin and plugin.ui or nil
             local document = reader and reader.document or nil
             if not document or reader.tearing_down then return end
+            if document._burrow_bionic_active == true then return end
             if desiredTone(document, Screen) ~= wantedTone then return end
 
             local fingerprint = currentFingerprint(document)
@@ -431,7 +436,12 @@ function Module.attachPluginClass(plugin_class)
     end
 
     local function startFullBackground(document, originalFile, wantedTone, knownProfile)
-        if not document or not isEpub(originalFile) then return end
+        if not document
+            or document._burrow_bionic_active == true
+            or not isEpub(originalFile)
+        then
+            return
+        end
 
         local function withProfile(profile)
             if type(profile) ~= "table" then return end
@@ -494,6 +504,7 @@ function Module.attachPluginClass(plugin_class)
     end
 
     local function prepareNearbyFirst(plugin, document, token, wantedTone)
+        if document._burrow_bionic_active == true then return end
         local originalFile = document._burrow_epub_ornaments_source_file or document.file
         if not isEpub(originalFile) then return end
 
@@ -614,6 +625,12 @@ function Module.attachPluginClass(plugin_class)
             local reader = plugin and plugin.ui or nil
             local document = reader and reader.document or nil
             if not document or reader.tearing_down then return end
+            if document._burrow_bionic_active == true then
+                -- The Bionic shadow itself is unchanged across light/dark
+                -- transitions. Native KOReader repainting is enough and avoids
+                -- an expensive CRengine close/reopen/reflow cycle on Kindle.
+                return
+            end
             local originalFile = document._burrow_epub_ornaments_source_file or document.file
             if not isEpub(originalFile) then return end
             if not G_reader_settings:isTrue(ORNAMENT_SETTING)
