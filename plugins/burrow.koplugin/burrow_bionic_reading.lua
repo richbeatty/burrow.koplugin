@@ -69,6 +69,18 @@ function Bionic.cachePath(source)
     return Bionic.cacheDirectory() .. "/" .. identity .. ".epub"
 end
 
+local HOT_SPINE_RADIUS = 2
+local ASYNC_STEP_DELAY = 0.01
+local ASYNC_JOBS = {}
+local OPEN_PROGRESS_HINTS = {}
+
+function Bionic.cachedPath(source)
+    local target, err = Bionic.cachePath(source)
+    if not target then return nil, err end
+    if lfs.attributes(target, "mode") == "file" then return target end
+    return nil
+end
+
 function Bionic.ensureCache(source)
     if not Bionic.isSupportedFile(source) then
         return nil, "Bionic Reading currently supports EPUB books."
@@ -83,13 +95,232 @@ function Bionic.ensureCache(source)
     if not target then return nil, err end
     if lfs.attributes(target, "mode") == "file" then return target end
 
-    logger.info("[Burrow bionic] Building shadow EPUB", source)
+    logger.info("[Burrow bionic] Building complete shadow EPUB", source)
     local ok, buildErr = Epub.generate(source, target)
     if not ok then
         os.remove(target)
         return nil, buildErr
     end
     return target
+end
+
+function Bionic.hotCachePath(source, progress, radius)
+    local full, err = Bionic.cachePath(source)
+    if not full then return nil, err end
+
+    progress = tonumber(progress) or 0
+    if progress < 0 then progress = 0 end
+    if progress > 1 then progress = 1 end
+    radius = math.max(0, tonumber(radius) or HOT_SPINE_RADIUS)
+
+    local bucket = math.floor(progress * 1000 + 0.5)
+    return full:gsub(
+        "%.epub$",
+        string.format("-hot-%04d-r%d.epub", bucket, radius)
+    )
+end
+
+function Bionic.ensureHotCache(source, progress, radius)
+    if not Bionic.isSupportedFile(source) then
+        return nil, "Bionic Reading currently supports EPUB books."
+    end
+
+    local directory = Bionic.cacheDirectory()
+    if not ensureDir(directory) then
+        return nil, "Could not create Burrow's Bionic Reading cache."
+    end
+
+    local target, err = Bionic.hotCachePath(source, progress, radius)
+    if not target then return nil, err end
+    if lfs.attributes(target, "mode") == "file" then return target end
+
+    logger.info("[Burrow bionic] Building spine-priority hot EPUB", source, progress)
+    local ok, buildErr = Epub.generateHot(
+        source,
+        target,
+        progress,
+        radius or HOT_SPINE_RADIUS
+    )
+    if not ok then
+        os.remove(target)
+        return nil, buildErr
+    end
+    return target
+end
+
+function Bionic.ensureCacheAsync(source, callback)
+    if not Bionic.isSupportedFile(source) then
+        UIManager:nextTick(function()
+            callback(nil, "Bionic Reading currently supports EPUB books.")
+        end)
+        return
+    end
+
+    local directory = Bionic.cacheDirectory()
+    if not ensureDir(directory) then
+        UIManager:nextTick(function()
+            callback(nil, "Could not create Burrow's Bionic Reading cache.")
+        end)
+        return
+    end
+
+    local target, err = Bionic.cachePath(source)
+    if not target then
+        UIManager:nextTick(function() callback(nil, err) end)
+        return
+    end
+    if lfs.attributes(target, "mode") == "file" then
+        UIManager:nextTick(function() callback(target, nil) end)
+        return
+    end
+
+    local existingJob = ASYNC_JOBS[target]
+    if existingJob then
+        existingJob.callbacks[#existingJob.callbacks + 1] = callback
+        return
+    end
+
+    local job = {
+        callbacks = { callback },
+    }
+    ASYNC_JOBS[target] = job
+
+    local co = coroutine.create(function()
+        local function cooperate()
+            coroutine.yield()
+        end
+        local ok, buildErr = Epub.generateCooperative(source, target, cooperate)
+        if not ok then
+            return nil, buildErr
+        end
+        return target, nil
+    end)
+
+    local function finish(result, buildErr)
+        if ASYNC_JOBS[target] == job then
+            ASYNC_JOBS[target] = nil
+        end
+        if not result then os.remove(target) end
+
+        local callbacks = job.callbacks
+        job.callbacks = {}
+        for _, cb in ipairs(callbacks) do
+            if type(cb) == "function" then
+                local ok, callbackErr = pcall(cb, result, buildErr)
+                if not ok then
+                    logger.warn(
+                        "[Burrow bionic] Background cache callback failed",
+                        callbackErr
+                    )
+                end
+            end
+        end
+    end
+
+    local function step()
+        if ASYNC_JOBS[target] ~= job then return end
+        local ok, result, buildErr = coroutine.resume(co)
+        if not ok then
+            finish(nil, tostring(result))
+            return
+        end
+        if coroutine.status(co) == "dead" then
+            finish(result, buildErr)
+            return
+        end
+        UIManager:scheduleIn(ASYNC_STEP_DELAY, step)
+    end
+
+    logger.info("[Burrow bionic] Starting cooperative full shadow build", source)
+    UIManager:nextTick(step)
+end
+
+function Bionic.setOpenProgressHint(source, progress)
+    if not Bionic.isSupportedFile(source) then return end
+    progress = tonumber(progress)
+    if not progress then return end
+    if progress < 0 then progress = 0 end
+    if progress > 1 then progress = 1 end
+    OPEN_PROGRESS_HINTS[source] = progress
+end
+
+local function scheduleHotPromotion(source, hotPath, fullPath)
+    local stableTicks = 0
+    local lastXPointer
+
+    local function check()
+        local okReader, ReaderUI = pcall(require, "apps/reader/readerui")
+        local reader = okReader and ReaderUI.instance or nil
+        local document = reader and reader.document or nil
+
+        if not reader or not document or reader.tearing_down then return end
+        if document._burrow_bionic_original_file ~= source
+            or document._burrow_bionic_hot ~= true
+        then
+            return
+        end
+
+        if reader.menu and reader.menu.menu_container then
+            stableTicks = 0
+            UIManager:scheduleIn(0.6, check)
+            return
+        end
+
+        local rolling = reader.rolling
+        if rolling and rolling._current_rerendering_pid ~= nil then
+            stableTicks = 0
+            UIManager:scheduleIn(0.6, check)
+            return
+        end
+
+        local xpointer
+        if type(document.getXPointer) == "function" then
+            local ok, value = pcall(document.getXPointer, document)
+            if ok then xpointer = value end
+        end
+
+        if lastXPointer ~= nil and xpointer == lastXPointer then
+            stableTicks = stableTicks + 1
+        else
+            stableTicks = 0
+        end
+        lastXPointer = xpointer
+
+        if stableTicks < 2 then
+            UIManager:scheduleIn(0.6, check)
+            return
+        end
+
+        if type(reader.reloadDocument) ~= "function" then return end
+
+        local savedXPointer = xpointer
+        logger.info("[Burrow bionic] Promoting hot EPUB to complete shadow")
+        local okReload, reloadErr = pcall(
+            reader.reloadDocument,
+            reader,
+            nil,
+            true,
+            function(reopenedReader)
+                if savedXPointer
+                    and reopenedReader
+                    and reopenedReader.rolling
+                    and type(reopenedReader.rolling.onGotoXPointer) == "function"
+                then
+                    pcall(
+                        reopenedReader.rolling.onGotoXPointer,
+                        reopenedReader.rolling,
+                        savedXPointer
+                    )
+                end
+                os.remove(hotPath)
+            end
+        )
+        if not okReload then
+            logger.warn("[Burrow bionic] Could not promote complete shadow", reloadErr)
+        end
+    end
+
+    UIManager:scheduleIn(0.8, check)
 end
 
 local function activeDocument(search)
@@ -116,6 +347,10 @@ function Bionic.attachPluginClass(Burrow)
         local doc = document or self.document or (self.ui and self.ui.document)
         if doc and doc.provider == "crengine" then
             doc._burrow_bionic_reader_context = true
+            if docSettings and type(docSettings.readSetting) == "function" then
+                doc._burrow_bionic_percent_hint =
+                    tonumber(docSettings:readSetting("percent_finished")) or 0
+            end
         end
     end
 end
@@ -140,10 +375,35 @@ function Bionic.apply()
             end
 
             local originalFile = self.file
-            local shadow, shadowErr = Bionic.ensureCache(originalFile)
+            local shadow = Bionic.cachedPath(originalFile)
+            local hot = false
+
             if not shadow then
-                logger.warn("[Burrow bionic] Falling back to original EPUB", shadowErr)
-                return originalLoad(self, fullDocument)
+                local progress = OPEN_PROGRESS_HINTS[originalFile]
+                    or tonumber(self._burrow_bionic_percent_hint)
+                    or 0
+                OPEN_PROGRESS_HINTS[originalFile] = nil
+
+                local hotErr
+                shadow, hotErr = Bionic.ensureHotCache(
+                    originalFile,
+                    progress,
+                    HOT_SPINE_RADIUS
+                )
+                if not shadow then
+                    logger.warn(
+                        "[Burrow bionic] Could not prepare Bionic-only hot EPUB",
+                        hotErr
+                    )
+                    UIManager:nextTick(function()
+                        UIManager:show(InfoMessage:new{
+                            text = _("Bionic Reading could not prepare this EPUB. The normal-text book was not opened."),
+                            timeout = 4,
+                        })
+                    end)
+                    return false
+                end
+                hot = true
             end
 
             self.file = shadow
@@ -153,9 +413,28 @@ function Bionic.apply()
 
             if result then
                 self._burrow_bionic_active = true
+                self._burrow_bionic_hot = hot
                 self._burrow_bionic_shadow_file = shadow
                 self._burrow_bionic_original_file = originalFile
-                logger.info("[Burrow bionic] Loaded shadow EPUB")
+                logger.info(
+                    hot
+                        and "[Burrow bionic] Loaded spine-priority hot EPUB"
+                        or "[Burrow bionic] Loaded complete shadow EPUB"
+                )
+
+                if hot then
+                    local hotPath = shadow
+                    Bionic.ensureCacheAsync(originalFile, function(fullPath, buildErr)
+                        if not fullPath then
+                            logger.warn(
+                                "[Burrow bionic] Cooperative full shadow build failed",
+                                buildErr
+                            )
+                            return
+                        end
+                        scheduleHotPromotion(originalFile, hotPath, fullPath)
+                    end)
+                end
             end
             return result
         end
