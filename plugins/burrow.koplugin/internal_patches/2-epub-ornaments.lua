@@ -221,12 +221,12 @@ function Module.apply()
         function CreDocument:loadDocument(fullDocument)
             if self._loaded
                 or fullDocument == false
-                -- Bionic shadows are mode-independent text transforms. Keep
-                -- them on KOReader's native light/dark paint path so changing
-                -- Night Mode never swaps or reloads the Bionic EPUB.
-                or (self._burrow_bionic_reader_context == true
-                    and G_reader_settings:isTrue("burrow_bionic_reading"))
-                or self._burrow_epub_ornament_reader_context ~= true
+                -- Keep the original, proven wrapper composition: Bionic's outer
+                -- loader substitutes its text shadow first, then this inner
+                -- ornament loader applies the normal light/night ornament cache
+                -- to that already-Bionic EPUB.
+                or (self._burrow_epub_ornament_reader_context ~= true
+                    and self._burrow_bionic_reader_context ~= true)
                 or not G_reader_settings:isTrue(ORNAMENT_SETTING)
                 or hasUserReaderPalette()
                 or not isEpub(self.file)
@@ -403,7 +403,6 @@ function Module.attachPluginClass(plugin_class)
             local reader = plugin and plugin.ui or nil
             local document = reader and reader.document or nil
             if not document or reader.tearing_down then return end
-            if document._burrow_bionic_active == true then return end
             if desiredTone(document, Screen) ~= wantedTone then return end
 
             local fingerprint = currentFingerprint(document)
@@ -436,12 +435,13 @@ function Module.attachPluginClass(plugin_class)
     end
 
     local function startFullBackground(document, originalFile, wantedTone, knownProfile)
-        if not document
-            or document._burrow_bionic_active == true
-            or not isEpub(originalFile)
-        then
-            return
-        end
+        if not document or not isEpub(originalFile) then return end
+
+        -- A hot Bionic EPUB is disposable and will soon be replaced by the full
+        -- Bionic shadow. Do only nearby ornament work against it. Full-book
+        -- light/night caches are reserved for the completed Bionic shadow so we
+        -- do not scan and rewrite the same book twice.
+        if document._burrow_bionic_hot == true then return end
 
         local function withProfile(profile)
             if type(profile) ~= "table" then return end
@@ -504,7 +504,6 @@ function Module.attachPluginClass(plugin_class)
     end
 
     local function prepareNearbyFirst(plugin, document, token, wantedTone)
-        if document._burrow_bionic_active == true then return end
         local originalFile = document._burrow_epub_ornaments_source_file or document.file
         if not isEpub(originalFile) then return end
 
@@ -625,16 +624,6 @@ function Module.attachPluginClass(plugin_class)
             local reader = plugin and plugin.ui or nil
             local document = reader and reader.document or nil
             if not document or reader.tearing_down then return end
-            if document._burrow_bionic_active == true
-                and document._burrow_epub_ornaments_fast_adaptive ~= true
-            then
-                -- Mixed-image Bionic documents still avoid the old explicit
-                -- decorative-EPUB reload path. Fully adaptive Bionic documents,
-                -- however, must continue through the repaint branch below so
-                -- CRengine drops its cached page buffer and applies the inverted
-                -- ornament palette immediately.
-                return
-            end
             local originalFile = document._burrow_epub_ornaments_source_file or document.file
             if not isEpub(originalFile) then return end
             if not G_reader_settings:isTrue(ORNAMENT_SETTING)

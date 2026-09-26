@@ -4,6 +4,22 @@ All notable changes to Burrow will be documented here.
 
 ## [Unreleased]
 
+## [0.4.12-beta.7] - 2026-09-26
+
+### Changed
+
+- Restored the proven pre-Bionic ornament pipeline for Bionic books instead of maintaining a separate Bionic-specific palette implementation.
+- Bionic generation is text-only again: it copies original image resources unchanged and no longer performs ornament detection or recoloring while building the Bionic shadow.
+- The normal ornament engine now runs as the inner EPUB layer on top of the already-Bionic shadow, just as the original wrapper ordering was designed to do.
+- Light and dark ornament caches are prepared cooperatively in the background from the Bionic shadow, with nearby/current reading sections prioritized before full-book work.
+- Disposable hot Bionic shadows receive only nearby ornament processing. Full-book light/night ornament caches are deferred until the completed Bionic shadow is active, avoiding duplicate whole-book image work.
+- Bionic cache identity is no longer tied to ornament palette settings, so changing ornament or page-palette settings does not force the Bionic text cache to be rebuilt.
+
+### Fixed
+
+- Restored the known-working explicit light/dark ornament swap path for Bionic EPUBs, including mixed-image books.
+- Removed the beta.4-beta.6 Bionic-specific ornament shortcuts that could leave ornaments stuck in the light palette.
+
 ## [0.4.12-beta.6] - 2026-09-26
 
 ### Changed
