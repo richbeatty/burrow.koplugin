@@ -100,20 +100,18 @@ local function spineDocuments(opf, items)
     return result
 end
 
-local function filterHotSpine(opf, items, hotSet)
-    if type(opf) ~= "string" or type(hotSet) ~= "table" then
+local function filterHotSpine(opf, hotEnd)
+    if type(opf) ~= "string" or not tonumber(hotEnd) then
         return opf
     end
 
     local filtered, replaced = opf:gsub(
         "(<spine[^>]*>)(.-)(</spine>)",
         function(openTag, body, closeTag)
+            local index = 0
             local kept = body:gsub("<itemref%s+[^>]->", function(tag)
-                local idref = attr(tag, "idref")
-                local item = idref and items[idref] or nil
-                if item and hotSet[item.path] then
-                    return tag
-                end
+                index = index + 1
+                if index <= hotEnd then return tag end
                 return ""
             end)
             return openTag .. kept .. closeTag
@@ -234,6 +232,7 @@ local function generateImpl(sourcePath, targetPath, options)
     local hot_set
     local hot_image_set
     local hot_opf
+    local hot_spine_end
     local hot_meta
     if options.hot then
         hot_set = {}
@@ -249,7 +248,9 @@ local function generateImpl(sourcePath, targetPath, options)
         if center < 1 then center = 1 end
         if center > total and total > 0 then center = total end
 
-        for index = math.max(1, center - radius), math.min(total, center + radius) do
+        local hot_start = math.max(1, center - radius)
+        hot_spine_end = math.min(total, center + radius)
+        for index = hot_start, hot_spine_end do
             hot_set[spine[index]] = true
         end
         for path in pairs(nav_documents) do
@@ -270,7 +271,11 @@ local function generateImpl(sourcePath, targetPath, options)
             end
         end
 
-        hot_opf = filterHotSpine(opf, items, hot_set)
+        -- Keep every earlier spine entry so CRengine's document-fragment
+        -- numbering stays identical to the completed EPUB. Earlier unprepared
+        -- entries remain non-readable placeholders, while normal forward page
+        -- turns stop at the prepared window's end instead of crossing into one.
+        hot_opf = filterHotSpine(opf, hot_spine_end)
         hot_meta = {
             center = center,
             radius = radius,
