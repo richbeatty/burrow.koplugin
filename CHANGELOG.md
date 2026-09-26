@@ -4,6 +4,21 @@ All notable changes to Burrow will be documented here.
 
 ## [Unreleased]
 
+## [0.4.12-beta.5] - 2026-09-25
+
+### Changed
+
+- Expanded the initial Bionic hot window and biased it toward upcoming spine sections so normal reading has substantially more prepared Bionic content while the full shadow finishes cooperatively in the background.
+- Hot Bionic EPUBs now keep prior spine entries for stable CRengine fragment numbering but remove unprepared future spine entries from normal page flow, so page turns stop at prepared content instead of entering synthetic preparation chapters.
+- Hot-to-full Bionic promotion now tracks the last real reading XPointer and semantic text anchor and restores those after reload instead of trusting an XPointer captured from a synthetic preparation page.
+- Bionic documents now reuse the established adaptive ornament render state when the cached ornament profile confirms every non-cover image is eligible, preserving the no-reflow Night Mode path.
+
+### Fixed
+
+- Fixed hot Bionic promotion jumping back to the cover after reaching a Preparing Bionic Reading section.
+- Fixed Bionic Night Mode failing to repaint adaptive ornaments after the beta.4 image-normalization change.
+- Prevented normal forward reading from reaching synthetic preparation chapters in the hot Bionic document.
+
 ## [0.4.12-beta.4] - 2026-09-25
 
 ### Changed
