@@ -771,6 +771,31 @@ local function isEligibleImage(content, media, cooperate)
     return eligible
 end
 
+-- Bionic Reading needs the same conservative ornament normalization without
+-- building a second decorative shadow EPUB. Expose one narrow transform that
+-- always writes the light-side grayscale palette. CRengine's Night Mode logic
+-- pre-inverts only colored pixels, so these equal-channel ornament pixels follow
+-- the page inversion naturally while photographs and other colored artwork keep
+-- KOReader's normal image behavior.
+function Epub.transformAdaptiveImage(content, media, tempBase, useSoftPalette, cooperate)
+    if media ~= "image/png"
+        and media ~= "image/jpeg"
+        and media ~= "image/svg+xml"
+    then
+        return nil
+    end
+
+    if media == "image/svg+xml"
+        and not svgHasOnlyMonochromeColors(content)
+    then
+        return nil
+    end
+
+    local palette = useSoftPalette and PALETTES["soft-light"]
+        or PALETTES["pure-light"]
+    return transformImage(content, media, tempBase, palette, cooperate)
+end
+
 local function inspectImpl(sourcePath, cooperate)
     local reader = Archiver.Reader:new()
     if not reader:open(sourcePath) then

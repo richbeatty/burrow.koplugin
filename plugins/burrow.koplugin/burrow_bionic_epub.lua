@@ -1,6 +1,8 @@
 local Archiver = require("ffi/archiver")
+local Blitbuffer = require("ffi/blitbuffer")
 local logger = require("logger")
 
+local OrnamentEpub = require("burrow_soft_palette_epub")
 local Transformer = require("burrow_bionic_xhtml")
 
 local Epub = {}
@@ -43,7 +45,13 @@ local function manifestItems(opf, opfPath)
     local items = {}
     local content = {}
     local nav = {}
+    local images = {}
     local base = dirname(opfPath)
+    local epub2_cover_id = (opf or ""):match(
+        '<meta[^>]-name%s*=%s*"cover"[^>]-content%s*=%s*"([^"]+)"'
+    ) or (opf or ""):match(
+        "<meta[^>]-name%s*=%s*'cover'[^>]-content%s*=%s*'([^']+)'"
+    )
 
     for tag in (opf or ""):gmatch("<item%s+[^>]->") do
         local id = attr(tag, "id")
@@ -63,11 +71,21 @@ local function manifestItems(opf, opfPath)
                 if properties:match("%f[%w]nav%f[%W]") then
                     nav[path] = true
                 end
+            elseif media == "image/png"
+                or media == "image/jpeg"
+                or media == "image/svg+xml"
+            then
+                local is_cover = properties:find("cover%-image") ~= nil
+                    or (epub2_cover_id and id == epub2_cover_id)
+                    or path:lower():find("cover", 1, true) ~= nil
+                if not is_cover then
+                    images[path] = media
+                end
             end
         end
     end
 
-    return items, content, nav
+    return items, content, nav, images
 end
 
 local function spineDocuments(opf, items)
@@ -80,6 +98,52 @@ local function spineDocuments(opf, items)
         end
     end
     return result
+end
+
+local function cleanReference(ref)
+    if type(ref) ~= "string" then return nil end
+    ref = ref:gsub("&amp;", "&"):gsub("#.*$", "")
+    if ref == "" or ref:match("^%a+:") or ref:sub(1, 1) == "#" then
+        return nil
+    end
+    return ref
+end
+
+local function referencedImages(content, documentPath, imageSet)
+    local found = {}
+    if type(content) ~= "string" then return found end
+    local base = dirname(documentPath)
+
+    local function add(ref)
+        ref = cleanReference(ref)
+        if not ref then return end
+        local path = normalizePath(base .. ref)
+        if imageSet[path] then found[path] = true end
+    end
+
+    for ref in content:gmatch('[Ss][Rr][Cc]%s*=%s*"([^"]+)"') do add(ref) end
+    for ref in content:gmatch("[Ss][Rr][Cc]%s*=%s*'([^']+)'") do add(ref) end
+    for ref in content:gmatch('[Hh][Rr][Ee][Ff]%s*=%s*"([^"]+)"') do add(ref) end
+    for ref in content:gmatch("[Hh][Rr][Ee][Ff]%s*=%s*'([^']+)'") do add(ref) end
+    for ref in content:gmatch('[Xx][Ll][Ii][Nn][Kk]:[Hh][Rr][Ee][Ff]%s*=%s*"([^"]+)"') do add(ref) end
+    for ref in content:gmatch("[Xx][Ll][Ii][Nn][Kk]:[Hh][Rr][Ee][Ff]%s*=%s*'([^']+)'") do add(ref) end
+    for ref in content:gmatch('[Dd][Aa][Tt][Aa]%s*=%s*"([^"]+)"') do add(ref) end
+    for ref in content:gmatch("[Dd][Aa][Tt][Aa]%s*=%s*'([^']+)'") do add(ref) end
+    for ref in content:gmatch("[Uu][Rr][Ll]%s*%(%s*['\"]?([^)'\"]+)['\"]?%s*%)") do add(ref) end
+
+    return found
+end
+
+local function ornamentNormalizationEnabled()
+    return G_reader_settings:isTrue("burrow_soft_palette_recolor_ornaments")
+        and not G_reader_settings:has("cre_background_color")
+        and not G_reader_settings:has("cre_background_image")
+        and type(OrnamentEpub.transformAdaptiveImage) == "function"
+end
+
+local function softPaletteActive()
+    return tonumber(Blitbuffer.COLOR_WHITE.a) == 0xF2
+        and tonumber(Blitbuffer.COLOR_BLACK.a) == 0x20
 end
 
 local function pendingXhtml()
@@ -138,10 +202,12 @@ local function generateImpl(sourcePath, targetPath, options)
         return false, "EPUB package document could not be read."
     end
 
-    local items, content_documents, nav_documents = manifestItems(opf, opfPath)
+    local items, content_documents, nav_documents, image_documents =
+        manifestItems(opf, opfPath)
     local spine = spineDocuments(opf, items)
 
     local hot_set
+    local hot_image_set
     local hot_meta
     if options.hot then
         hot_set = {}
@@ -164,6 +230,20 @@ local function generateImpl(sourcePath, targetPath, options)
             hot_set[path] = true
         end
 
+        hot_image_set = {}
+        for path in pairs(hot_set) do
+            if content_documents[path] then
+                local source_content = reader:extractToMemory(path)
+                if source_content then
+                    for image_path in pairs(
+                        referencedImages(source_content, path, image_documents)
+                    ) do
+                        hot_image_set[image_path] = true
+                    end
+                end
+            end
+        end
+
         hot_meta = {
             center = center,
             radius = radius,
@@ -172,7 +252,10 @@ local function generateImpl(sourcePath, targetPath, options)
     end
 
     local tempPath = targetPath .. ".tmp"
+    local ornamentTempBase = targetPath .. ".ornament.tmp"
     os.remove(tempPath)
+    os.remove(ornamentTempBase .. ".png")
+    os.remove(ornamentTempBase .. ".jpg")
     local writer = Archiver.Writer:new()
     if not writer:open(tempPath, "epub") then
         closeQuietly(reader)
@@ -226,6 +309,34 @@ local function generateImpl(sourcePath, targetPath, options)
                 end
             end
 
+            if ornamentNormalizationEnabled()
+                and image_documents[normalized]
+                and (not options.hot
+                    or (hot_image_set and hot_image_set[normalized]))
+            then
+                local ok, transformed = pcall(
+                    OrnamentEpub.transformAdaptiveImage,
+                    content,
+                    image_documents[normalized],
+                    ornamentTempBase,
+                    softPaletteActive(),
+                    cooperate
+                )
+                if ok and transformed then
+                    content = transformed
+                    logger.dbg(
+                        "[Burrow bionic] Embedded adaptive ornament palette",
+                        entry.path
+                    )
+                elseif not ok then
+                    logger.warn(
+                        "[Burrow bionic] Adaptive ornament transform failed",
+                        entry.path,
+                        transformed
+                    )
+                end
+            end
+
             archiveCompression(writer, normalized, content_documents, options.hot)
             if not writer:addFileFromMemory(entry.path, content, mtime) then
                 closeQuietly(writer)
@@ -240,6 +351,8 @@ local function generateImpl(sourcePath, targetPath, options)
 
     closeQuietly(writer)
     closeQuietly(reader)
+    os.remove(ornamentTempBase .. ".png")
+    os.remove(ornamentTempBase .. ".jpg")
 
     os.remove(targetPath)
     local ok, err = os.rename(tempPath, targetPath)

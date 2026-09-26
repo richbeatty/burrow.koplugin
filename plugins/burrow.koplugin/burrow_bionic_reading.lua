@@ -1,4 +1,5 @@
 local bit = require("bit")
+local Blitbuffer = require("ffi/blitbuffer")
 local DataStorage = require("datastorage")
 local InfoMessage = require("ui/widget/infomessage")
 local UIManager = require("ui/uimanager")
@@ -16,7 +17,7 @@ if existing then return existing end
 local Bionic = {
     key = MODULE_KEY,
     SETTING_KEY = "burrow_bionic_reading",
-    CACHE_VERSION = "crosspoint45-v1",
+    CACHE_VERSION = "crosspoint45-v2-adaptive-ornaments",
 }
 package.loaded[MODULE_KEY] = Bionic
 
@@ -54,6 +55,19 @@ function Bionic.cacheDirectory()
     return root .. "/cache/burrow-bionic"
 end
 
+local function ornamentCacheToken()
+    if not G_reader_settings:isTrue("burrow_soft_palette_recolor_ornaments")
+        or G_reader_settings:has("cre_background_color")
+        or G_reader_settings:has("cre_background_image")
+    then
+        return "ornaments-off"
+    end
+
+    local soft = tonumber(Blitbuffer.COLOR_WHITE.a) == 0xF2
+        and tonumber(Blitbuffer.COLOR_BLACK.a) == 0x20
+    return soft and "ornaments-soft" or "ornaments-pure"
+end
+
 function Bionic.cachePath(source)
     local checksum = util.partialMD5(source)
     if not checksum then return nil, "Could not identify this EPUB." end
@@ -64,6 +78,7 @@ function Bionic.cachePath(source)
         tostring(attrs.size or ""),
         tostring(attrs.modification or ""),
         Bionic.CACHE_VERSION,
+        ornamentCacheToken(),
     }, "-")
     identity = identity:gsub("[^%w%-_%.]", "_")
     return Bionic.cacheDirectory() .. "/" .. identity .. ".epub"

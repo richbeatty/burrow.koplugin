@@ -4,6 +4,20 @@ All notable changes to Burrow will be documented here.
 
 ## [Unreleased]
 
+## [0.4.12-beta.4] - 2026-09-25
+
+### Changed
+
+- Bionic shadow EPUB generation now normalizes eligible monochrome ornaments directly into the Bionic cache using an adaptive grayscale palette, so the same loaded Bionic document can follow KOReader light/dark inversion without a second decorative-EPUB reload path.
+- Bionic cache identity now includes the active ornament-palette mode so older beta.3 shadows and shadows built under different palette settings are not reused incorrectly.
+- Kindle automatic Wi-Fi recovery now triggers Amazon's scan once and polls scan state through short scheduled callbacks instead of calling KOReader's blocking Kindle network-list scan from the UI thread.
+
+### Fixed
+
+- Restored decorative ornament palette switching in Bionic Reading while preserving the fast no-reflow Night Mode path introduced in beta.3.
+- Fixed a Kindle wake/resume regression where the UI could freeze for 20 seconds or longer while a silent Wi-Fi scan blocked the event loop, then replay queued taps after the scan completed.
+- Preserved automatic saved-network recovery, Wi-Fi intent handling, and KOSync suspend queuing without blocking reader input during resume.
+
 ## [0.4.12-beta.3] - 2026-09-19
 
 ### Changed
