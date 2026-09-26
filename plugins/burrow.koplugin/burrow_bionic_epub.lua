@@ -100,6 +100,31 @@ local function spineDocuments(opf, items)
     return result
 end
 
+local function filterHotSpine(opf, items, hotSet)
+    if type(opf) ~= "string" or type(hotSet) ~= "table" then
+        return opf
+    end
+
+    local filtered, replaced = opf:gsub(
+        "(<spine[^>]*>)(.-)(</spine>)",
+        function(openTag, body, closeTag)
+            local kept = body:gsub("<itemref%s+[^>]->", function(tag)
+                local idref = attr(tag, "idref")
+                local item = idref and items[idref] or nil
+                if item and hotSet[item.path] then
+                    return tag
+                end
+                return ""
+            end)
+            return openTag .. kept .. closeTag
+        end,
+        1
+    )
+
+    if replaced == 0 then return opf end
+    return filtered
+end
+
 local function cleanReference(ref)
     if type(ref) ~= "string" then return nil end
     ref = ref:gsub("&amp;", "&"):gsub("#.*$", "")
@@ -208,6 +233,7 @@ local function generateImpl(sourcePath, targetPath, options)
 
     local hot_set
     local hot_image_set
+    local hot_opf
     local hot_meta
     if options.hot then
         hot_set = {}
@@ -244,6 +270,7 @@ local function generateImpl(sourcePath, targetPath, options)
             end
         end
 
+        hot_opf = filterHotSpine(opf, items, hot_set)
         hot_meta = {
             center = center,
             radius = radius,
@@ -282,6 +309,15 @@ local function generateImpl(sourcePath, targetPath, options)
             end
 
             local normalized = normalizePath(entry.path)
+
+            -- The hot EPUB exposes only the prepared spine window. Normal page
+            -- turns therefore stop at the edge of prepared Bionic content instead
+            -- of entering synthetic placeholder chapters that do not exist in the
+            -- completed shadow and cannot preserve a stable reading position.
+            if options.hot and hot_opf and normalized == opfPath then
+                content = hot_opf
+            end
+
             if content_documents[normalized] then
                 if not options.hot or hot_set[normalized] then
                     local ok, transformed = pcall(
