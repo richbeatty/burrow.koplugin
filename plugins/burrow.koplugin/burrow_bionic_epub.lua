@@ -248,8 +248,14 @@ local function generateImpl(sourcePath, targetPath, options)
         if center < 1 then center = 1 end
         if center > total and total > 0 then center = total end
 
-        local hot_start = math.max(1, center - radius)
-        hot_spine_end = math.min(total, center + radius)
+        -- Reading normally advances forward, so spend most of the initial
+        -- synchronous budget ahead of the current section. This gives the
+        -- background full-shadow worker much more time to finish without making
+        -- first open pay for an equally large block of already-read chapters.
+        local behind = math.min(radius, 4)
+        local ahead = radius * 2
+        local hot_start = math.max(1, center - behind)
+        hot_spine_end = math.min(total, center + ahead)
         for index = hot_start, hot_spine_end do
             hot_set[spine[index]] = true
         end
