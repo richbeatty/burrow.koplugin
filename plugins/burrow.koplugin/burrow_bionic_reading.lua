@@ -824,7 +824,7 @@ local function previousWordStart(document, from)
     if ok then return xp end
 end
 
-local function captureTextAnchor(reader)
+captureTextAnchor = function(reader)
     local document = reader and reader.document
     if not document
         or document.provider ~= "crengine"
@@ -879,6 +879,18 @@ local function captureTextAnchor(reader)
         words = words,
         source_xpointer = firstStart,
     }
+end
+
+isPendingAnchor = function(anchor)
+    if type(anchor) ~= "table" or type(anchor.words) ~= "table" then
+        return false
+    end
+    local first = anchor.words[1]
+    local second = anchor.words[2]
+    local third = anchor.words[3]
+    return first == "preparing"
+        and second == "bionic"
+        and third == "reading"
 end
 
 local function wordsMatch(window, expected)
@@ -961,7 +973,7 @@ local function locateTextAnchor(reader, anchor)
     return nil
 end
 
-local function restoreSemanticAnchor(reader, anchor)
+restoreSemanticAnchor = function(reader, anchor)
     local xpointer = locateTextAnchor(reader, anchor)
     if not xpointer
         or not reader
@@ -990,7 +1002,7 @@ local function restoreSemanticAnchor(reader, anchor)
     return true
 end
 
-local function captureReadingPercent(reader)
+captureReadingPercent = function(reader)
     if not reader or not reader.rolling then
         return nil
     end
@@ -1016,7 +1028,7 @@ local function captureReadingPercent(reader)
     return nil
 end
 
-local function restoreReadingPercent(reader, percent)
+restoreReadingPercent = function(reader, percent)
     if type(percent) ~= "number"
         or not reader
         or not reader.rolling
