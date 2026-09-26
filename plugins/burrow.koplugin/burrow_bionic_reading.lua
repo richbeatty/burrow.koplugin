@@ -9,6 +9,7 @@ local util = require("util")
 local _ = require("gettext")
 
 local Epub = require("burrow_bionic_epub")
+local OrnamentEpub = require("burrow_soft_palette_epub")
 
 local MODULE_KEY = "burrow.bionic_reading"
 local existing = package.loaded[MODULE_KEY]
@@ -17,7 +18,7 @@ if existing then return existing end
 local Bionic = {
     key = MODULE_KEY,
     SETTING_KEY = "burrow_bionic_reading",
-    CACHE_VERSION = "crosspoint45-v2-adaptive-ornaments",
+    CACHE_VERSION = "crosspoint45-v3-hot-spine-anchor",
 }
 package.loaded[MODULE_KEY] = Bionic
 
@@ -84,10 +85,105 @@ function Bionic.cachePath(source)
     return Bionic.cacheDirectory() .. "/" .. identity .. ".epub"
 end
 
-local HOT_SPINE_RADIUS = 2
+local HOT_SPINE_RADIUS = 12
 local ASYNC_STEP_DELAY = 0.01
 local ASYNC_JOBS = {}
 local OPEN_PROGRESS_HINTS = {}
+
+-- These helpers are implemented later in the module, but hot-cache lifecycle
+-- callbacks are registered before their definitions. Keep explicit upvalues so
+-- promotion and reader-event tracking share the same position logic.
+local captureTextAnchor
+local captureReadingPercent
+local restoreSemanticAnchor
+local restoreReadingPercent
+local isPendingAnchor
+
+local function bionicOrnamentsEnabled()
+    return G_reader_settings:isTrue("burrow_soft_palette_recolor_ornaments")
+        and not G_reader_settings:has("cre_background_color")
+        and not G_reader_settings:has("cre_background_image")
+end
+
+local function applyAdaptiveOrnamentState(document, source, profile)
+    if not document or not bionicOrnamentsEnabled() then return false, false end
+    profile = profile or OrnamentEpub.peekProfile(source)
+    if type(profile) ~= "table"
+        or profile.all_eligible ~= true
+        or document._nightmode_images == false
+    then
+        return false, false
+    end
+
+    local changed = document._burrow_epub_ornaments_fast_adaptive ~= true
+    document._burrow_epub_ornaments_active = true
+    document._burrow_epub_ornaments_fast_adaptive = true
+    document._burrow_epub_ornaments_fast_adaptive_candidate = true
+    document._burrow_epub_ornaments_profile = profile
+    document._burrow_epub_ornaments_source_file = source
+    document._burrow_epub_ornaments_tone = "adaptive"
+    return true, changed
+end
+
+local function refreshAdaptiveOrnaments(plugin)
+    local reader = plugin and plugin.ui or nil
+    local document = reader and reader.document or nil
+    if not reader or not document or reader.tearing_down
+        or document._burrow_bionic_active ~= true
+    then
+        return
+    end
+
+    local source = document._burrow_bionic_original_file or document.file
+    local profile = OrnamentEpub.peekProfile(source)
+    local applied, changed = applyAdaptiveOrnamentState(document, source, profile)
+    if applied then
+        if changed then
+            if type(document.resetBufferCache) == "function" then
+                pcall(document.resetBufferCache, document)
+            elseif document.buffer then
+                pcall(document.buffer.free, document.buffer)
+                document.buffer = nil
+            end
+            UIManager:setDirty(reader, "full")
+        end
+        return
+    end
+
+    if profile or not bionicOrnamentsEnabled()
+        or type(OrnamentEpub.inspectAsync) ~= "function"
+    then
+        return
+    end
+
+    OrnamentEpub.inspectAsync(source, function(asyncProfile, err)
+        if err then
+            logger.warn("[Burrow bionic] Ornament profile inspection failed", err)
+            return
+        end
+
+        local currentReader = plugin and plugin.ui or nil
+        local currentDocument = currentReader and currentReader.document or nil
+        if not currentReader or not currentDocument or currentReader.tearing_down
+            or currentDocument._burrow_bionic_active ~= true
+            or currentDocument._burrow_bionic_original_file ~= source
+        then
+            return
+        end
+
+        local okApplied, didChange =
+            applyAdaptiveOrnamentState(currentDocument, source, asyncProfile)
+        if okApplied and didChange then
+            if type(currentDocument.resetBufferCache) == "function" then
+                pcall(currentDocument.resetBufferCache, currentDocument)
+            elseif currentDocument.buffer then
+                pcall(currentDocument.buffer.free, currentDocument.buffer)
+                currentDocument.buffer = nil
+            end
+            UIManager:setDirty(currentReader, "full")
+        end
+    end)
+end
 
 function Bionic.cachedPath(source)
     local target, err = Bionic.cachePath(source)
