@@ -555,6 +555,43 @@ function Bionic.attachPluginClass(Burrow)
             end
         end
     end
+
+    local originalReaderReady = Burrow.onReaderReady
+    function Burrow:onReaderReady(...)
+        local result
+        if originalReaderReady then
+            result = originalReaderReady(self, ...)
+        end
+        UIManager:nextTick(function()
+            refreshAdaptiveOrnaments(self)
+            trackHotPosition(self)
+        end)
+        return result
+    end
+
+    local originalPageUpdate = Burrow.onPageUpdate
+    function Burrow:onPageUpdate(...)
+        local result
+        if originalPageUpdate then
+            result = originalPageUpdate(self, ...)
+        end
+        UIManager:nextTick(function()
+            trackHotPosition(self)
+        end)
+        return result
+    end
+
+    local originalPosUpdate = Burrow.onPosUpdate
+    function Burrow:onPosUpdate(...)
+        local result
+        if originalPosUpdate then
+            result = originalPosUpdate(self, ...)
+        end
+        UIManager:nextTick(function()
+            trackHotPosition(self)
+        end)
+        return result
+    end
 end
 
 function Bionic.apply()
@@ -618,6 +655,18 @@ function Bionic.apply()
                 self._burrow_bionic_hot = hot
                 self._burrow_bionic_shadow_file = shadow
                 self._burrow_bionic_original_file = originalFile
+
+                -- When the existing ornament profile proves every non-cover
+                -- image is eligible for Burrow's adaptive treatment, mark the
+                -- Bionic document for the same no-reload dark-mode renderer.
+                -- If the profile is not ready yet, onReaderReady inspects it
+                -- cooperatively and applies this state afterward.
+                applyAdaptiveOrnamentState(
+                    self,
+                    originalFile,
+                    OrnamentEpub.peekProfile(originalFile)
+                )
+
                 logger.info(
                     hot
                         and "[Burrow bionic] Loaded spine-priority hot EPUB"
