@@ -625,10 +625,14 @@ function Module.attachPluginClass(plugin_class)
             local reader = plugin and plugin.ui or nil
             local document = reader and reader.document or nil
             if not document or reader.tearing_down then return end
-            if document._burrow_bionic_active == true then
-                -- The Bionic shadow itself is unchanged across light/dark
-                -- transitions. Native KOReader repainting is enough and avoids
-                -- an expensive CRengine close/reopen/reflow cycle on Kindle.
+            if document._burrow_bionic_active == true
+                and document._burrow_epub_ornaments_fast_adaptive ~= true
+            then
+                -- Mixed-image Bionic documents still avoid the old explicit
+                -- decorative-EPUB reload path. Fully adaptive Bionic documents,
+                -- however, must continue through the repaint branch below so
+                -- CRengine drops its cached page buffer and applies the inverted
+                -- ornament palette immediately.
                 return
             end
             local originalFile = document._burrow_epub_ornaments_source_file or document.file
