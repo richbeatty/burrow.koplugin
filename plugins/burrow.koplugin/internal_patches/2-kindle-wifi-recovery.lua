@@ -19,11 +19,14 @@ package.loaded[MODULE_KEY] = Module
     Wi-Fi path works because it performs an active scan and explicitly asks the
     Kindle backend to authenticate a known network.
 
-    This patch keeps KOReader's normal background restore intact, then performs
+    This patch keeps KOReader's normal background restore intact, then starts
     one silent Kindle-only scan shortly afterward if the device is still not
-    connected. If a saved network is visible, Burrow asks the existing Kindle
-    backend to authenticate it. There are deliberately no dialogs, toasts, or
-    failure messages in this automatic path.
+    connected. The scan is triggered once and its state is polled through short
+    UIManager callbacks. It never calls Kindle getNetworkList(), whose native
+    implementation blocks the UI thread while waiting for scan completion.
+    If a saved network is visible, Burrow asks the existing Kindle backend to
+    authenticate it. There are deliberately no dialogs, toasts, or failure
+    messages in this automatic path.
 
     KOReader Progress Sync has a separate suspend path which deliberately calls
     updateProgress with ensure_networking=true. When a Kindle is out of range,
@@ -59,7 +62,7 @@ function Module.apply()
     local UIManager = require("ui/uimanager")
     local logger = require("logger")
 
-    if NetworkMgr._burrow_kindle_wifi_recovery_v3 then
+    if NetworkMgr._burrow_kindle_wifi_recovery_v4 then
         Module.applied = true
         return true
     end
@@ -81,7 +84,6 @@ function Module.apply()
         or type(original_toggle_on) ~= "function"
         or type(original_toggle_off) ~= "function"
         or type(original_will_rerun_when_online) ~= "function"
-        or type(NetworkMgr.getNetworkList) ~= "function"
         or type(NetworkMgr.authenticateNetwork) ~= "function"
     then
         logger.warn("Burrow Kindle Wi-Fi recovery: required KOReader network hooks are unavailable")
@@ -91,12 +93,20 @@ function Module.apply()
 
     local RECOVERY_DELAY_SECONDS = 2
     local RECOVERY_COOLDOWN_SECONDS = 30
+    local RECOVERY_POLL_SECONDS = 0.25
+    local RECOVERY_MAX_POLLS = 80
 
     local function cancelScheduledRecovery(self)
         if self._burrow_kindle_wifi_recovery_callback then
             UIManager:unschedule(self._burrow_kindle_wifi_recovery_callback)
         end
+        if self._burrow_kindle_wifi_recovery_poll_callback then
+            UIManager:unschedule(self._burrow_kindle_wifi_recovery_poll_callback)
+        end
         self._burrow_kindle_wifi_recovery_pending = false
+        self._burrow_kindle_wifi_recovery_polling = false
+        self._burrow_kindle_wifi_recovery_poll_count = 0
+        self._burrow_kindle_wifi_recovery_saw_scan = false
     end
 
     local function clearAutomaticRestore(self)
@@ -132,12 +142,200 @@ function Module.apply()
         return false
     end
 
+    local function withLipcHandle(callback)
+        local ok_lipc, lipc = pcall(require, "liblipclua")
+        if not ok_lipc or not lipc then return false, "liblipclua unavailable" end
+
+        local handle = lipc.init("com.github.koreader.burrow.wifirecovery")
+        if not handle then return false, "could not open LIPC handle" end
+
+        local ok, a, b = pcall(callback, handle)
+        pcall(handle.close, handle)
+        if not ok then return false, a end
+        return true, a, b
+    end
+
+    local function triggerNonBlockingScan()
+        return withLipcHandle(function(handle)
+            -- This property returns immediately. Unlike KOReader's Kindle
+            -- getNetworkList(), we never wait in a usleep loop on the UI thread.
+            handle:set_string_property("com.lab126.wifid", "scan", "")
+            return true
+        end)
+    end
+
+    local function readScanState()
+        local ok, state = withLipcHandle(function(handle)
+            return handle:get_string_property("com.lab126.wifid", "scanState")
+        end)
+        if not ok then return nil, state end
+        return state
+    end
+
+    local function readScanList()
+        local ok_lipc, lipc = pcall(require, "libopenlipclua")
+        if not ok_lipc or not lipc then
+            return nil, "libopenlipclua unavailable"
+        end
+
+        local handle = lipc.open_no_name()
+        if not handle then return nil, "could not open scan-list LIPC handle" end
+
+        local input = handle:new_hasharray()
+        local ok, result = pcall(function()
+            return handle:access_hash_property(
+                "com.lab126.wifid",
+                "scanList",
+                input
+            )
+        end)
+
+        local list
+        if ok and result then
+            list = result:to_table()
+            pcall(result.destroy, result)
+        end
+        pcall(input.destroy, input)
+        pcall(handle.close, handle)
+
+        if not ok then return nil, result end
+        return list or {}
+    end
+
+    local function strongestKnownNetwork(scan_list)
+        local best
+        local best_signal = -math.huge
+
+        for _, network in ipairs(scan_list or {}) do
+            local ssid = network.essid
+            if network.known == "yes" and ssid and ssid ~= "" then
+                local signal = tonumber(network.signal) or 0
+                local signal_max = tonumber(network.signal_max) or 0
+                local quality = signal_max > 0 and signal / signal_max or signal
+                if not best or quality > best_signal then
+                    best = { ssid = ssid }
+                    best_signal = quality
+                end
+            end
+        end
+
+        return best
+    end
+
+    local pollSilentRecovery
+
+    local function finishSilentScan(self)
+        self._burrow_kindle_wifi_recovery_polling = false
+        self._burrow_kindle_wifi_recovery_pending = false
+
+        if not self._burrow_kindle_auto_restore_active then return end
+
+        self:queryNetworkState()
+        if self.is_wifi_on and self.is_connected then
+            logger.dbg(
+                "Burrow Kindle Wi-Fi recovery: scan completed and backend associated"
+            )
+            clearAutomaticRestore(self)
+            return
+        end
+
+        local scan_list, scan_error = readScanList()
+        if type(scan_list) ~= "table" then
+            logger.dbg(
+                "Burrow Kindle Wi-Fi recovery: could not read completed scan",
+                tostring(scan_error)
+            )
+            return
+        end
+
+        local network = strongestKnownNetwork(scan_list)
+        if not network then
+            logger.dbg(
+                "Burrow Kindle Wi-Fi recovery: no saved network is currently available"
+            )
+            return
+        end
+
+        logger.dbg(
+            "Burrow Kindle Wi-Fi recovery: silently reconnecting to saved network",
+            tostring(network.ssid)
+        )
+        local auth_ok, success, auth_error = pcall(
+            self.authenticateNetwork,
+            self,
+            network
+        )
+        if not auth_ok then
+            logger.warn(
+                "Burrow Kindle Wi-Fi recovery: authentication request failed",
+                success
+            )
+            return
+        end
+        if success == false then
+            logger.dbg(
+                "Burrow Kindle Wi-Fi recovery: saved-network authentication declined",
+                tostring(auth_error)
+            )
+        end
+    end
+
+    pollSilentRecovery = function(self)
+        if not self._burrow_kindle_wifi_recovery_polling then return end
+        if not self._burrow_kindle_auto_restore_active then
+            cancelScheduledRecovery(self)
+            return
+        end
+
+        self:queryNetworkState()
+        if self.is_wifi_on and self.is_connected then
+            logger.dbg(
+                "Burrow Kindle Wi-Fi recovery: connected while async scan was running"
+            )
+            clearAutomaticRestore(self)
+            return
+        end
+
+        self._burrow_kindle_wifi_recovery_poll_count =
+            (tonumber(self._burrow_kindle_wifi_recovery_poll_count) or 0) + 1
+
+        local state, state_error = readScanState()
+        if not state then
+            logger.dbg(
+                "Burrow Kindle Wi-Fi recovery: scan-state poll failed",
+                tostring(state_error)
+            )
+            cancelScheduledRecovery(self)
+            return
+        end
+
+        if state ~= "idle" then
+            self._burrow_kindle_wifi_recovery_saw_scan = true
+        elseif self._burrow_kindle_wifi_recovery_saw_scan
+            or self._burrow_kindle_wifi_recovery_poll_count >= 2
+        then
+            finishSilentScan(self)
+            return
+        end
+
+        if self._burrow_kindle_wifi_recovery_poll_count >= RECOVERY_MAX_POLLS then
+            logger.dbg(
+                "Burrow Kindle Wi-Fi recovery: asynchronous scan timed out without blocking input"
+            )
+            cancelScheduledRecovery(self)
+            return
+        end
+
+        UIManager:scheduleIn(
+            RECOVERY_POLL_SECONDS,
+            self._burrow_kindle_wifi_recovery_poll_callback
+        )
+    end
+
     local function silentRecover(self)
         self._burrow_kindle_wifi_recovery_pending = false
 
-        if not self._burrow_kindle_auto_restore_active then
-            return
-        end
+        if not self._burrow_kindle_auto_restore_active then return end
         if not G_reader_settings:isTrue("auto_restore_wifi") or not self.wifi_was_on then
             clearAutomaticRestore(self)
             return
@@ -145,75 +343,52 @@ function Module.apply()
 
         self:queryNetworkState()
         if self.is_wifi_on and self.is_connected then
-            logger.dbg("Burrow Kindle Wi-Fi recovery: normal background restore already connected")
+            logger.dbg(
+                "Burrow Kindle Wi-Fi recovery: normal background restore already connected"
+            )
             clearAutomaticRestore(self)
             return
         end
 
         local now = os.time()
-        local last_attempt = tonumber(self._burrow_kindle_wifi_recovery_last_attempt) or 0
+        local last_attempt = tonumber(
+            self._burrow_kindle_wifi_recovery_last_attempt
+        ) or 0
         if now - last_attempt < RECOVERY_COOLDOWN_SECONDS then
-            logger.dbg("Burrow Kindle Wi-Fi recovery: skipping duplicate recovery scan")
+            logger.dbg(
+                "Burrow Kindle Wi-Fi recovery: skipping duplicate recovery scan"
+            )
             return
         end
         self._burrow_kindle_wifi_recovery_last_attempt = now
 
-        -- getNetworkList uses KOReader's existing Kindle backend. It triggers the
-        -- same real Kindle scan used by the manual Wi-Fi path, but we deliberately
-        -- do not call reconnectOrShowNetworkMenu because that function owns the
-        -- visible "Scanning" / "Connecting" / failure messages.
-        local ok, network_list, scan_error = pcall(self.getNetworkList, self)
+        local ok, scan_error = triggerNonBlockingScan()
         if not ok then
-            logger.warn("Burrow Kindle Wi-Fi recovery: silent scan failed", network_list)
-            return
-        end
-        if type(network_list) ~= "table" then
-            logger.dbg("Burrow Kindle Wi-Fi recovery: no scan results", tostring(scan_error))
-            return
-        end
-        if #network_list == 0 then
-            logger.dbg("Burrow Kindle Wi-Fi recovery: no networks in range")
+            logger.dbg(
+                "Burrow Kindle Wi-Fi recovery: could not start asynchronous scan",
+                tostring(scan_error)
+            )
             return
         end
 
-        table.sort(network_list, function(left, right)
-            return (tonumber(left.signal_quality) or 0) > (tonumber(right.signal_quality) or 0)
-        end)
-
-        -- Amazon's backend may already have associated while the scan was in
-        -- progress. If so, leave the normal KOReader connectivity check to finish
-        -- the lifecycle and emit NetworkConnected.
-        for _, network in ipairs(network_list) do
-            if network.connected then
-                logger.dbg("Burrow Kindle Wi-Fi recovery: Kindle backend already associated", tostring(network.ssid))
-                return
-            end
-        end
-
-        -- Match KOReader's native reconnect policy: saved Kindle profiles expose
-        -- their PSK as network.password. Try the strongest saved network first.
-        for _, network in ipairs(network_list) do
-            if network.password and network.ssid then
-                logger.dbg("Burrow Kindle Wi-Fi recovery: silently reconnecting to saved network", tostring(network.ssid))
-                local auth_ok, success, auth_error = pcall(self.authenticateNetwork, self, network)
-                if not auth_ok then
-                    logger.warn("Burrow Kindle Wi-Fi recovery: authentication request failed", success)
-                    return
-                end
-                if success ~= false then
-                    return
-                end
-                logger.dbg("Burrow Kindle Wi-Fi recovery: saved-network authentication declined", tostring(auth_error))
-            end
-        end
-
-        logger.dbg("Burrow Kindle Wi-Fi recovery: no saved network is currently available")
+        self._burrow_kindle_wifi_recovery_polling = true
+        self._burrow_kindle_wifi_recovery_poll_count = 0
+        self._burrow_kindle_wifi_recovery_saw_scan = false
+        UIManager:scheduleIn(
+            RECOVERY_POLL_SECONDS,
+            self._burrow_kindle_wifi_recovery_poll_callback
+        )
     end
 
     local recovery_callback = function()
         silentRecover(NetworkMgr)
     end
+    local recovery_poll_callback = function()
+        pollSilentRecovery(NetworkMgr)
+    end
     NetworkMgr._burrow_kindle_wifi_recovery_callback = recovery_callback
+    NetworkMgr._burrow_kindle_wifi_recovery_poll_callback =
+        recovery_poll_callback
 
     local function scheduleSilentRecovery(self)
         cancelScheduledRecovery(self)
@@ -343,8 +518,9 @@ function Module.apply()
     NetworkMgr._burrow_kindle_wifi_recovery_v1 = true
     NetworkMgr._burrow_kindle_wifi_recovery_v2 = true
     NetworkMgr._burrow_kindle_wifi_recovery_v3 = true
+    NetworkMgr._burrow_kindle_wifi_recovery_v4 = true
     Module.applied = true
-    logger.info("Burrow Kindle silent Wi-Fi recovery loaded")
+    logger.info("Burrow Kindle nonblocking Wi-Fi recovery loaded")
     return true
 end
 
