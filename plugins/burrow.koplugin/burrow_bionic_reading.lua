@@ -916,6 +916,7 @@ function Bionic.apply()
                 displayTone = forced.tone
                 FORCED_DISPLAY[originalFile] = nil
             else
+                if forced then FORCED_DISPLAY[originalFile] = nil end
                 shadow, displayTone =
                     cachedDisplayShadow(originalFile, baseShadow, profile)
             end
