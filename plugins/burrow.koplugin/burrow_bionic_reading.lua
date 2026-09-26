@@ -685,7 +685,8 @@ local function updateMixedOrnamentTone(plugin, token)
     end
     if not isMixedOrnamentProfile(profile) then return end
 
-    local baseShadow = document._burrow_bionic_base_shadow_file
+    local baseShadow = Bionic.cachedPath(source)
+        or document._burrow_bionic_base_shadow_file
         or document._burrow_bionic_shadow_file
     if not baseShadow or lfs.attributes(baseShadow, "mode") ~= "file" then return end
 
@@ -962,7 +963,64 @@ function Bionic.apply()
                             )
                             return
                         end
-                        scheduleHotPromotion(originalFile, hotPath, fullPath)
+
+                        local fullProfile =
+                            OrnamentEpub.peekProfile(originalFile)
+                        if isMixedOrnamentProfile(fullProfile) then
+                            if currentTone() == "night" then
+                                -- Do not promote a hot dark-mode reader to the
+                                -- light ornament base. Prepare the already-Bionic
+                                -- full shadow's night assets first, then reload once.
+                                ensureDisplayShadowAsync(
+                                    originalFile,
+                                    fullPath,
+                                    fullProfile,
+                                    "night",
+                                    function(_, err)
+                                        if err then
+                                            logger.warn(
+                                                "[Burrow bionic] Full night ornament preparation failed",
+                                                err
+                                            )
+                                        end
+                                        scheduleHotPromotion(
+                                            originalFile,
+                                            hotPath,
+                                            fullPath
+                                        )
+                                    end
+                                )
+                            else
+                                scheduleHotPromotion(
+                                    originalFile,
+                                    hotPath,
+                                    fullPath
+                                )
+                                -- While the reader is using the light base,
+                                -- prepare the only extra mixed-image variant so
+                                -- the next Night Mode switch has no Bionic text work.
+                                ensureDisplayShadowAsync(
+                                    originalFile,
+                                    fullPath,
+                                    fullProfile,
+                                    "night",
+                                    function(_, err)
+                                        if err then
+                                            logger.warn(
+                                                "[Burrow bionic] Full night ornament prewarm failed",
+                                                err
+                                            )
+                                        end
+                                    end
+                                )
+                            end
+                        else
+                            scheduleHotPromotion(
+                                originalFile,
+                                hotPath,
+                                fullPath
+                            )
+                        end
                     end)
                 end
             end
