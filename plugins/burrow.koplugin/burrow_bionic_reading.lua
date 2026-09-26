@@ -802,6 +802,7 @@ function Bionic.attachPluginClass(Burrow)
         UIManager:nextTick(function()
             refreshAdaptiveOrnaments(self)
             trackHotPosition(self)
+            scheduleMixedOrnamentToneUpdate(self)
         end)
         return result
     end
@@ -827,6 +828,26 @@ function Bionic.attachPluginClass(Burrow)
         UIManager:nextTick(function()
             trackHotPosition(self)
         end)
+        return result
+    end
+
+    local originalToggleNightMode = Burrow.onToggleNightMode
+    function Burrow:onToggleNightMode(...)
+        local result
+        if originalToggleNightMode then
+            result = originalToggleNightMode(self, ...)
+        end
+        scheduleMixedOrnamentToneUpdate(self)
+        return result
+    end
+
+    local originalSetNightMode = Burrow.onSetNightMode
+    function Burrow:onSetNightMode(...)
+        local result
+        if originalSetNightMode then
+            result = originalSetNightMode(self, ...)
+        end
+        scheduleMixedOrnamentToneUpdate(self)
         return result
     end
 end
