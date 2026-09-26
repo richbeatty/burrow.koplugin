@@ -692,22 +692,22 @@ function Bionic.apply()
             end
 
             local originalFile = self.file
-            local shadow = Bionic.cachedPath(originalFile)
+            local baseShadow = Bionic.cachedPath(originalFile)
             local hot = false
 
-            if not shadow then
+            if not baseShadow then
                 local progress = OPEN_PROGRESS_HINTS[originalFile]
                     or tonumber(self._burrow_bionic_percent_hint)
                     or 0
                 OPEN_PROGRESS_HINTS[originalFile] = nil
 
                 local hotErr
-                shadow, hotErr = Bionic.ensureHotCache(
+                baseShadow, hotErr = Bionic.ensureHotCache(
                     originalFile,
                     progress,
                     HOT_SPINE_RADIUS
                 )
-                if not shadow then
+                if not baseShadow then
                     logger.warn(
                         "[Burrow bionic] Could not prepare Bionic-only hot EPUB",
                         hotErr
@@ -723,6 +723,25 @@ function Bionic.apply()
                 hot = true
             end
 
+            local profile = OrnamentEpub.peekProfile(originalFile)
+            local shadow, displayTone
+
+            local forced = FORCED_DISPLAY[originalFile]
+            if forced
+                and forced.base == baseShadow
+                and forced.path
+                and lfs.attributes(forced.path, "mode") == "file"
+            then
+                shadow = forced.path
+                displayTone = forced.tone
+                FORCED_DISPLAY[originalFile] = nil
+            else
+                shadow, displayTone =
+                    cachedDisplayShadow(originalFile, baseShadow, profile)
+            end
+            shadow = shadow or baseShadow
+            displayTone = displayTone or "plain"
+
             self.file = shadow
             local ok, result = pcall(originalLoad, self, fullDocument)
             self.file = originalFile
@@ -731,7 +750,9 @@ function Bionic.apply()
             if result then
                 self._burrow_bionic_active = true
                 self._burrow_bionic_hot = hot
+                self._burrow_bionic_base_shadow_file = baseShadow
                 self._burrow_bionic_shadow_file = shadow
+                self._burrow_bionic_display_tone = displayTone
                 self._burrow_bionic_original_file = originalFile
 
                 -- When the existing ornament profile proves every non-cover
@@ -742,7 +763,7 @@ function Bionic.apply()
                 applyAdaptiveOrnamentState(
                     self,
                     originalFile,
-                    OrnamentEpub.peekProfile(originalFile)
+                    profile
                 )
 
                 logger.info(
@@ -752,7 +773,7 @@ function Bionic.apply()
                 )
 
                 if hot then
-                    local hotPath = shadow
+                    local hotPath = baseShadow
                     Bionic.ensureCacheAsync(originalFile, function(fullPath, buildErr)
                         if not fullPath then
                             logger.warn(
