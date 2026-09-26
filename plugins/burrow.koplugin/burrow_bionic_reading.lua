@@ -187,7 +187,6 @@ local function applyAdaptiveOrnamentState(document, source, profile)
     profile = profile or OrnamentEpub.peekProfile(source)
     if type(profile) ~= "table"
         or profile.all_eligible ~= true
-        or document._burrow_bionic_display_tone ~= "adaptive"
         or document._nightmode_images == false
     then
         return false, false
@@ -200,6 +199,7 @@ local function applyAdaptiveOrnamentState(document, source, profile)
     document._burrow_epub_ornaments_profile = profile
     document._burrow_epub_ornaments_source_file = source
     document._burrow_epub_ornaments_tone = "adaptive"
+    document._burrow_bionic_display_tone = "adaptive"
     return true, changed
 end
 
@@ -614,9 +614,8 @@ local function reloadBionicDisplay(plugin, source, baseShadow, targetShadow, ton
         return
     end
 
-    if document._burrow_bionic_display_tone == tone
-        and document._burrow_bionic_shadow_file == targetShadow
-    then
+    if document._burrow_bionic_shadow_file == targetShadow then
+        document._burrow_bionic_display_tone = tone
         return
     end
 
