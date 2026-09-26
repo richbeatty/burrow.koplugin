@@ -9,6 +9,7 @@ local util = require("util")
 local _ = require("gettext")
 
 local Epub = require("burrow_bionic_epub")
+local OrnamentEpub = require("burrow_soft_palette_epub")
 
 local MODULE_KEY = "burrow.bionic_reading"
 local existing = package.loaded[MODULE_KEY]
@@ -17,7 +18,7 @@ if existing then return existing end
 local Bionic = {
     key = MODULE_KEY,
     SETTING_KEY = "burrow_bionic_reading",
-    CACHE_VERSION = "crosspoint45-v2-adaptive-ornaments",
+    CACHE_VERSION = "crosspoint45-v3-hot-spine-anchor",
 }
 package.loaded[MODULE_KEY] = Bionic
 
@@ -84,10 +85,105 @@ function Bionic.cachePath(source)
     return Bionic.cacheDirectory() .. "/" .. identity .. ".epub"
 end
 
-local HOT_SPINE_RADIUS = 2
+local HOT_SPINE_RADIUS = 12
 local ASYNC_STEP_DELAY = 0.01
 local ASYNC_JOBS = {}
 local OPEN_PROGRESS_HINTS = {}
+
+-- These helpers are implemented later in the module, but hot-cache lifecycle
+-- callbacks are registered before their definitions. Keep explicit upvalues so
+-- promotion and reader-event tracking share the same position logic.
+local captureTextAnchor
+local captureReadingPercent
+local restoreSemanticAnchor
+local restoreReadingPercent
+local isPendingAnchor
+
+local function bionicOrnamentsEnabled()
+    return G_reader_settings:isTrue("burrow_soft_palette_recolor_ornaments")
+        and not G_reader_settings:has("cre_background_color")
+        and not G_reader_settings:has("cre_background_image")
+end
+
+local function applyAdaptiveOrnamentState(document, source, profile)
+    if not document or not bionicOrnamentsEnabled() then return false, false end
+    profile = profile or OrnamentEpub.peekProfile(source)
+    if type(profile) ~= "table"
+        or profile.all_eligible ~= true
+        or document._nightmode_images == false
+    then
+        return false, false
+    end
+
+    local changed = document._burrow_epub_ornaments_fast_adaptive ~= true
+    document._burrow_epub_ornaments_active = true
+    document._burrow_epub_ornaments_fast_adaptive = true
+    document._burrow_epub_ornaments_fast_adaptive_candidate = true
+    document._burrow_epub_ornaments_profile = profile
+    document._burrow_epub_ornaments_source_file = source
+    document._burrow_epub_ornaments_tone = "adaptive"
+    return true, changed
+end
+
+local function refreshAdaptiveOrnaments(plugin)
+    local reader = plugin and plugin.ui or nil
+    local document = reader and reader.document or nil
+    if not reader or not document or reader.tearing_down
+        or document._burrow_bionic_active ~= true
+    then
+        return
+    end
+
+    local source = document._burrow_bionic_original_file or document.file
+    local profile = OrnamentEpub.peekProfile(source)
+    local applied, changed = applyAdaptiveOrnamentState(document, source, profile)
+    if applied then
+        if changed then
+            if type(document.resetBufferCache) == "function" then
+                pcall(document.resetBufferCache, document)
+            elseif document.buffer then
+                pcall(document.buffer.free, document.buffer)
+                document.buffer = nil
+            end
+            UIManager:setDirty(reader, "full")
+        end
+        return
+    end
+
+    if profile or not bionicOrnamentsEnabled()
+        or type(OrnamentEpub.inspectAsync) ~= "function"
+    then
+        return
+    end
+
+    OrnamentEpub.inspectAsync(source, function(asyncProfile, err)
+        if err then
+            logger.warn("[Burrow bionic] Ornament profile inspection failed", err)
+            return
+        end
+
+        local currentReader = plugin and plugin.ui or nil
+        local currentDocument = currentReader and currentReader.document or nil
+        if not currentReader or not currentDocument or currentReader.tearing_down
+            or currentDocument._burrow_bionic_active ~= true
+            or currentDocument._burrow_bionic_original_file ~= source
+        then
+            return
+        end
+
+        local okApplied, didChange =
+            applyAdaptiveOrnamentState(currentDocument, source, asyncProfile)
+        if okApplied and didChange then
+            if type(currentDocument.resetBufferCache) == "function" then
+                pcall(currentDocument.resetBufferCache, currentDocument)
+            elseif currentDocument.buffer then
+                pcall(currentDocument.buffer.free, currentDocument.buffer)
+                currentDocument.buffer = nil
+            end
+            UIManager:setDirty(currentReader, "full")
+        end
+    end)
+end
 
 function Bionic.cachedPath(source)
     local target, err = Bionic.cachePath(source)
@@ -259,6 +355,69 @@ function Bionic.setOpenProgressHint(source, progress)
     OPEN_PROGRESS_HINTS[source] = progress
 end
 
+local function currentXPointer(document)
+    if not document or type(document.getXPointer) ~= "function" then return nil end
+    local ok, value = pcall(document.getXPointer, document)
+    if ok then return value end
+end
+
+local function trackHotPosition(plugin)
+    local reader = plugin and plugin.ui or nil
+    local document = reader and reader.document or nil
+    if not reader or not document or reader.tearing_down
+        or document._burrow_bionic_hot ~= true
+    then
+        return
+    end
+
+    local anchor = captureTextAnchor and captureTextAnchor(reader) or nil
+    if anchor and isPendingAnchor and isPendingAnchor(anchor) then
+        document._burrow_bionic_boundary_waiting = true
+        local fallback = document._burrow_bionic_last_valid_xpointer
+        if fallback and reader.rolling
+            and type(reader.rolling.onGotoXPointer) == "function"
+        then
+            pcall(reader.rolling.onGotoXPointer, reader.rolling, fallback)
+        end
+        if not document._burrow_bionic_boundary_notice then
+            document._burrow_bionic_boundary_notice = true
+            UIManager:show(InfoMessage:new{
+                text = _("Preparing more Bionic text…"),
+                timeout = 1.5,
+            })
+        end
+        return
+    end
+
+    local xpointer = currentXPointer(document)
+    if xpointer then
+        document._burrow_bionic_last_valid_xpointer = xpointer
+    end
+    if anchor then
+        document._burrow_bionic_last_valid_anchor = anchor
+    end
+    if captureReadingPercent then
+        document._burrow_bionic_last_valid_percent =
+            captureReadingPercent(reader)
+    end
+
+    local currentPage, pageCount
+    if type(document.getCurrentPage) == "function" then
+        local ok, value = pcall(document.getCurrentPage, document)
+        if ok then currentPage = tonumber(value) end
+    end
+    if type(document.getPageCount) == "function" then
+        local ok, value = pcall(document.getPageCount, document)
+        if ok then pageCount = tonumber(value) end
+    end
+
+    document._burrow_bionic_boundary_waiting =
+        currentPage ~= nil and pageCount ~= nil and currentPage >= pageCount - 1
+    if not document._burrow_bionic_boundary_waiting then
+        document._burrow_bionic_boundary_notice = false
+    end
+end
+
 local function scheduleHotPromotion(source, hotPath, fullPath)
     local stableTicks = 0
     local lastXPointer
@@ -288,12 +447,7 @@ local function scheduleHotPromotion(source, hotPath, fullPath)
             return
         end
 
-        local xpointer
-        if type(document.getXPointer) == "function" then
-            local ok, value = pcall(document.getXPointer, document)
-            if ok then xpointer = value end
-        end
-
+        local xpointer = currentXPointer(document)
         if lastXPointer ~= nil and xpointer == lastXPointer then
             stableTicks = stableTicks + 1
         else
@@ -301,14 +455,35 @@ local function scheduleHotPromotion(source, hotPath, fullPath)
         end
         lastXPointer = xpointer
 
-        if stableTicks < 2 then
+        if document._burrow_bionic_boundary_waiting ~= true
+            and stableTicks < 2
+        then
             UIManager:scheduleIn(0.6, check)
             return
         end
 
         if type(reader.reloadDocument) ~= "function" then return end
 
-        local savedXPointer = xpointer
+        local currentAnchor = captureTextAnchor and captureTextAnchor(reader) or nil
+        local pending = currentAnchor and isPendingAnchor
+            and isPendingAnchor(currentAnchor)
+        local savedXPointer = pending
+            and document._burrow_bionic_last_valid_xpointer
+            or xpointer
+        local savedAnchor = pending
+            and document._burrow_bionic_last_valid_anchor
+            or currentAnchor
+        local savedPercent = pending
+            and document._burrow_bionic_last_valid_percent
+            or (captureReadingPercent and captureReadingPercent(reader) or nil)
+
+        if not savedXPointer then
+            savedXPointer = document._burrow_bionic_last_valid_xpointer
+        end
+        if not savedAnchor then
+            savedAnchor = document._burrow_bionic_last_valid_anchor
+        end
+
         logger.info("[Burrow bionic] Promoting hot EPUB to complete shadow")
         local okReload, reloadErr = pcall(
             reader.reloadDocument,
@@ -316,17 +491,29 @@ local function scheduleHotPromotion(source, hotPath, fullPath)
             nil,
             true,
             function(reopenedReader)
+                local rawRestored = false
                 if savedXPointer
                     and reopenedReader
                     and reopenedReader.rolling
                     and type(reopenedReader.rolling.onGotoXPointer) == "function"
                 then
-                    pcall(
+                    rawRestored = pcall(
                         reopenedReader.rolling.onGotoXPointer,
                         reopenedReader.rolling,
                         savedXPointer
                     )
                 end
+
+                -- Prepared spine items contain the same transformed XHTML in the
+                -- hot and complete shadows, so their XPointer is normally exact.
+                -- The semantic anchor is an independent guard against a DOM/path
+                -- mismatch and never relies on a synthetic preparation chapter.
+                if savedAnchor and restoreSemanticAnchor then
+                    restoreSemanticAnchor(reopenedReader, savedAnchor)
+                elseif not rawRestored and restoreReadingPercent then
+                    restoreReadingPercent(reopenedReader, savedPercent)
+                end
+
                 os.remove(hotPath)
             end
         )
@@ -367,6 +554,43 @@ function Bionic.attachPluginClass(Burrow)
                     tonumber(docSettings:readSetting("percent_finished")) or 0
             end
         end
+    end
+
+    local originalReaderReady = Burrow.onReaderReady
+    function Burrow:onReaderReady(...)
+        local result
+        if originalReaderReady then
+            result = originalReaderReady(self, ...)
+        end
+        UIManager:nextTick(function()
+            refreshAdaptiveOrnaments(self)
+            trackHotPosition(self)
+        end)
+        return result
+    end
+
+    local originalPageUpdate = Burrow.onPageUpdate
+    function Burrow:onPageUpdate(...)
+        local result
+        if originalPageUpdate then
+            result = originalPageUpdate(self, ...)
+        end
+        UIManager:nextTick(function()
+            trackHotPosition(self)
+        end)
+        return result
+    end
+
+    local originalPosUpdate = Burrow.onPosUpdate
+    function Burrow:onPosUpdate(...)
+        local result
+        if originalPosUpdate then
+            result = originalPosUpdate(self, ...)
+        end
+        UIManager:nextTick(function()
+            trackHotPosition(self)
+        end)
+        return result
     end
 end
 
@@ -431,6 +655,18 @@ function Bionic.apply()
                 self._burrow_bionic_hot = hot
                 self._burrow_bionic_shadow_file = shadow
                 self._burrow_bionic_original_file = originalFile
+
+                -- When the existing ornament profile proves every non-cover
+                -- image is eligible for Burrow's adaptive treatment, mark the
+                -- Bionic document for the same no-reload dark-mode renderer.
+                -- If the profile is not ready yet, onReaderReady inspects it
+                -- cooperatively and applies this state afterward.
+                applyAdaptiveOrnamentState(
+                    self,
+                    originalFile,
+                    OrnamentEpub.peekProfile(originalFile)
+                )
+
                 logger.info(
                     hot
                         and "[Burrow bionic] Loaded spine-priority hot EPUB"
@@ -588,7 +824,7 @@ local function previousWordStart(document, from)
     if ok then return xp end
 end
 
-local function captureTextAnchor(reader)
+captureTextAnchor = function(reader)
     local document = reader and reader.document
     if not document
         or document.provider ~= "crengine"
@@ -643,6 +879,18 @@ local function captureTextAnchor(reader)
         words = words,
         source_xpointer = firstStart,
     }
+end
+
+isPendingAnchor = function(anchor)
+    if type(anchor) ~= "table" or type(anchor.words) ~= "table" then
+        return false
+    end
+    local first = anchor.words[1]
+    local second = anchor.words[2]
+    local third = anchor.words[3]
+    return first == "preparing"
+        and second == "bionic"
+        and third == "reading"
 end
 
 local function wordsMatch(window, expected)
@@ -725,7 +973,7 @@ local function locateTextAnchor(reader, anchor)
     return nil
 end
 
-local function restoreSemanticAnchor(reader, anchor)
+restoreSemanticAnchor = function(reader, anchor)
     local xpointer = locateTextAnchor(reader, anchor)
     if not xpointer
         or not reader
@@ -754,7 +1002,7 @@ local function restoreSemanticAnchor(reader, anchor)
     return true
 end
 
-local function captureReadingPercent(reader)
+captureReadingPercent = function(reader)
     if not reader or not reader.rolling then
         return nil
     end
@@ -780,7 +1028,7 @@ local function captureReadingPercent(reader)
     return nil
 end
 
-local function restoreReadingPercent(reader, percent)
+restoreReadingPercent = function(reader, percent)
     if type(percent) ~= "number"
         or not reader
         or not reader.rolling
