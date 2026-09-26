@@ -1,5 +1,6 @@
 local bit = require("bit")
 local Blitbuffer = require("ffi/blitbuffer")
+local Screen = require("device").screen
 local DataStorage = require("datastorage")
 local InfoMessage = require("ui/widget/infomessage")
 local UIManager = require("ui/uimanager")
@@ -18,7 +19,7 @@ if existing then return existing end
 local Bionic = {
     key = MODULE_KEY,
     SETTING_KEY = "burrow_bionic_reading",
-    CACHE_VERSION = "crosspoint45-v3-hot-spine-anchor",
+    CACHE_VERSION = "crosspoint45-v4-mixed-ornament-tones",
 }
 package.loaded[MODULE_KEY] = Bionic
 
@@ -89,6 +90,9 @@ local HOT_SPINE_RADIUS = 12
 local ASYNC_STEP_DELAY = 0.01
 local ASYNC_JOBS = {}
 local OPEN_PROGRESS_HINTS = {}
+local FORCED_DISPLAY = {}
+local tone_update_token = 0
+local tone_update_pending = false
 
 -- These helpers are implemented later in the module, but hot-cache lifecycle
 -- callbacks are registered before their definitions. Keep explicit upvalues so
@@ -103,6 +107,79 @@ local function bionicOrnamentsEnabled()
     return G_reader_settings:isTrue("burrow_soft_palette_recolor_ornaments")
         and not G_reader_settings:has("cre_background_color")
         and not G_reader_settings:has("cre_background_image")
+end
+
+local function softPaletteActive()
+    return tonumber(Blitbuffer.COLOR_WHITE.a) == 0xF2
+        and tonumber(Blitbuffer.COLOR_BLACK.a) == 0x20
+end
+
+local function ornamentPalette(tone)
+    if tone == "night" then
+        return softPaletteActive() and "soft-night" or "pure-night"
+    end
+    return softPaletteActive() and "soft-light" or "pure-light"
+end
+
+local function isMixedOrnamentProfile(profile)
+    return type(profile) == "table"
+        and tonumber(profile.eligible_count) ~= nil
+        and tonumber(profile.eligible_count) > 0
+        and profile.all_eligible ~= true
+end
+
+local function currentTone()
+    return Screen.night_mode == true and "night" or "light"
+end
+
+local function cachedDisplayShadow(source, baseShadow, profile)
+    if not baseShadow then return nil, "plain" end
+    if not bionicOrnamentsEnabled()
+        or type(profile) ~= "table"
+        or tonumber(profile.eligible_count or 0) <= 0
+    then
+        return baseShadow, "plain"
+    end
+
+    if profile.all_eligible == true then
+        return baseShadow, "adaptive"
+    end
+
+    local tone = currentTone()
+    if tone == "light" then
+        return baseShadow, "light"
+    end
+
+    local decorated = OrnamentEpub.cachedResult(
+        baseShadow,
+        ornamentPalette("night")
+    )
+    if decorated then
+        return decorated, "night"
+    end
+    return baseShadow, "light"
+end
+
+local function ensureDisplayShadowAsync(source, baseShadow, profile, tone, callback)
+    if not baseShadow or type(callback) ~= "function" then return end
+    if not bionicOrnamentsEnabled()
+        or not isMixedOrnamentProfile(profile)
+        or tone == "light"
+    then
+        UIManager:nextTick(function()
+            callback(baseShadow, nil, tone == "light" and "light" or "plain")
+        end)
+        return
+    end
+
+    OrnamentEpub.ensureCacheAsync(
+        baseShadow,
+        ornamentPalette("night"),
+        profile,
+        function(path, err)
+            callback(path or baseShadow, err, path and "night" or "light")
+        end
+    )
 end
 
 local function applyAdaptiveOrnamentState(document, source, profile)
@@ -122,6 +199,7 @@ local function applyAdaptiveOrnamentState(document, source, profile)
     document._burrow_epub_ornaments_profile = profile
     document._burrow_epub_ornaments_source_file = source
     document._burrow_epub_ornaments_tone = "adaptive"
+    document._burrow_bionic_display_tone = "adaptive"
     return true, changed
 end
 
@@ -525,6 +603,165 @@ local function scheduleHotPromotion(source, hotPath, fullPath)
     UIManager:scheduleIn(0.8, check)
 end
 
+local function reloadBionicDisplay(plugin, source, baseShadow, targetShadow, tone)
+    local reader = plugin and plugin.ui or nil
+    local document = reader and reader.document or nil
+    if not reader or not document or reader.tearing_down
+        or document._burrow_bionic_active ~= true
+        or document._burrow_bionic_original_file ~= source
+        or type(reader.reloadDocument) ~= "function"
+    then
+        return
+    end
+
+    if document._burrow_bionic_shadow_file == targetShadow then
+        document._burrow_bionic_display_tone = tone
+        return
+    end
+
+    local savedPercent = captureReadingPercent and captureReadingPercent(reader) or nil
+    local savedAnchor = captureTextAnchor and captureTextAnchor(reader) or nil
+
+    FORCED_DISPLAY[source] = {
+        base = baseShadow,
+        path = targetShadow,
+        tone = tone,
+    }
+
+    logger.info("[Burrow bionic] Swapping prepared ornament tone", tone)
+    local ok, err = pcall(
+        reader.reloadDocument,
+        reader,
+        nil,
+        true,
+        function(reopenedReader)
+            if restoreReadingPercent then
+                restoreReadingPercent(reopenedReader, savedPercent)
+            end
+            if restoreSemanticAnchor then
+                restoreSemanticAnchor(reopenedReader, savedAnchor)
+            end
+        end
+    )
+    if not ok then
+        FORCED_DISPLAY[source] = nil
+        logger.warn("[Burrow bionic] Could not swap ornament tone", err)
+    end
+end
+
+local function updateMixedOrnamentTone(plugin, token)
+    if token ~= tone_update_token then return end
+
+    local reader = plugin and plugin.ui or nil
+    local document = reader and reader.document or nil
+    if not reader or not document or reader.tearing_down
+        or document._burrow_bionic_active ~= true
+    then
+        return
+    end
+
+    local source = document._burrow_bionic_original_file or document.file
+    if not bionicOrnamentsEnabled() then return end
+
+    local profile = OrnamentEpub.peekProfile(source)
+    if not profile then
+        if type(OrnamentEpub.inspectAsync) ~= "function" then return end
+        OrnamentEpub.inspectAsync(source, function(asyncProfile, err)
+            if err then
+                logger.warn("[Burrow bionic] Mixed ornament profile failed", err)
+                return
+            end
+            if token == tone_update_token and asyncProfile then
+                updateMixedOrnamentTone(plugin, token)
+            end
+        end)
+        return
+    end
+
+    if profile.all_eligible == true then
+        refreshAdaptiveOrnaments(plugin)
+        return
+    end
+    if not isMixedOrnamentProfile(profile) then return end
+
+    local baseShadow = Bionic.cachedPath(source)
+        or document._burrow_bionic_base_shadow_file
+        or document._burrow_bionic_shadow_file
+    if not baseShadow or lfs.attributes(baseShadow, "mode") ~= "file" then return end
+
+    local wanted = currentTone()
+    if wanted == "light" then
+        if document._burrow_bionic_display_tone ~= "light" then
+            reloadBionicDisplay(plugin, source, baseShadow, baseShadow, "light")
+        end
+
+        -- Prepare the expensive direction ahead of time. This copies the
+        -- already-Bionic EPUB and only recolors eligible ornament assets; it
+        -- never runs the Bionic text transformer again.
+        ensureDisplayShadowAsync(
+            source,
+            baseShadow,
+            profile,
+            "night",
+            function(_, err)
+                if err then
+                    logger.warn("[Burrow bionic] Night ornament prewarm failed", err)
+                end
+            end
+        )
+        return
+    end
+
+    if document._burrow_bionic_display_tone == "night" then return end
+
+    ensureDisplayShadowAsync(
+        source,
+        baseShadow,
+        profile,
+        "night",
+        function(target, err, preparedTone)
+            if token ~= tone_update_token then return end
+            if err then
+                logger.warn("[Burrow bionic] Night ornament cache failed", err)
+                return
+            end
+
+            local currentReader = plugin and plugin.ui or nil
+            local currentDocument = currentReader and currentReader.document or nil
+            if not currentReader or not currentDocument
+                or currentReader.tearing_down
+                or currentDocument._burrow_bionic_original_file ~= source
+                or currentTone() ~= "night"
+            then
+                return
+            end
+
+            reloadBionicDisplay(
+                plugin,
+                source,
+                baseShadow,
+                target,
+                preparedTone or "night"
+            )
+        end
+    )
+end
+
+local function scheduleMixedOrnamentToneUpdate(plugin)
+    tone_update_token = tone_update_token + 1
+    local token = tone_update_token
+    if tone_update_pending then return end
+    tone_update_pending = true
+
+    UIManager:nextTick(function()
+        tone_update_pending = false
+        if token ~= tone_update_token then
+            token = tone_update_token
+        end
+        updateMixedOrnamentTone(plugin, token)
+    end)
+end
+
 local function activeDocument(search)
     return search and search.ui and search.ui.document
         and search.ui.document._burrow_bionic_active == true
@@ -565,6 +802,7 @@ function Bionic.attachPluginClass(Burrow)
         UIManager:nextTick(function()
             refreshAdaptiveOrnaments(self)
             trackHotPosition(self)
+            scheduleMixedOrnamentToneUpdate(self)
         end)
         return result
     end
@@ -592,6 +830,26 @@ function Bionic.attachPluginClass(Burrow)
         end)
         return result
     end
+
+    local originalToggleNightMode = Burrow.onToggleNightMode
+    function Burrow:onToggleNightMode(...)
+        local result
+        if originalToggleNightMode then
+            result = originalToggleNightMode(self, ...)
+        end
+        scheduleMixedOrnamentToneUpdate(self)
+        return result
+    end
+
+    local originalSetNightMode = Burrow.onSetNightMode
+    function Burrow:onSetNightMode(...)
+        local result
+        if originalSetNightMode then
+            result = originalSetNightMode(self, ...)
+        end
+        scheduleMixedOrnamentToneUpdate(self)
+        return result
+    end
 end
 
 function Bionic.apply()
@@ -614,22 +872,22 @@ function Bionic.apply()
             end
 
             local originalFile = self.file
-            local shadow = Bionic.cachedPath(originalFile)
+            local baseShadow = Bionic.cachedPath(originalFile)
             local hot = false
 
-            if not shadow then
+            if not baseShadow then
                 local progress = OPEN_PROGRESS_HINTS[originalFile]
                     or tonumber(self._burrow_bionic_percent_hint)
                     or 0
                 OPEN_PROGRESS_HINTS[originalFile] = nil
 
                 local hotErr
-                shadow, hotErr = Bionic.ensureHotCache(
+                baseShadow, hotErr = Bionic.ensureHotCache(
                     originalFile,
                     progress,
                     HOT_SPINE_RADIUS
                 )
-                if not shadow then
+                if not baseShadow then
                     logger.warn(
                         "[Burrow bionic] Could not prepare Bionic-only hot EPUB",
                         hotErr
@@ -645,6 +903,26 @@ function Bionic.apply()
                 hot = true
             end
 
+            local profile = OrnamentEpub.peekProfile(originalFile)
+            local shadow, displayTone
+
+            local forced = FORCED_DISPLAY[originalFile]
+            if forced
+                and forced.base == baseShadow
+                and forced.path
+                and lfs.attributes(forced.path, "mode") == "file"
+            then
+                shadow = forced.path
+                displayTone = forced.tone
+                FORCED_DISPLAY[originalFile] = nil
+            else
+                if forced then FORCED_DISPLAY[originalFile] = nil end
+                shadow, displayTone =
+                    cachedDisplayShadow(originalFile, baseShadow, profile)
+            end
+            shadow = shadow or baseShadow
+            displayTone = displayTone or "plain"
+
             self.file = shadow
             local ok, result = pcall(originalLoad, self, fullDocument)
             self.file = originalFile
@@ -653,7 +931,9 @@ function Bionic.apply()
             if result then
                 self._burrow_bionic_active = true
                 self._burrow_bionic_hot = hot
+                self._burrow_bionic_base_shadow_file = baseShadow
                 self._burrow_bionic_shadow_file = shadow
+                self._burrow_bionic_display_tone = displayTone
                 self._burrow_bionic_original_file = originalFile
 
                 -- When the existing ornament profile proves every non-cover
@@ -664,7 +944,7 @@ function Bionic.apply()
                 applyAdaptiveOrnamentState(
                     self,
                     originalFile,
-                    OrnamentEpub.peekProfile(originalFile)
+                    profile
                 )
 
                 logger.info(
@@ -674,7 +954,7 @@ function Bionic.apply()
                 )
 
                 if hot then
-                    local hotPath = shadow
+                    local hotPath = baseShadow
                     Bionic.ensureCacheAsync(originalFile, function(fullPath, buildErr)
                         if not fullPath then
                             logger.warn(
@@ -683,7 +963,64 @@ function Bionic.apply()
                             )
                             return
                         end
-                        scheduleHotPromotion(originalFile, hotPath, fullPath)
+
+                        local fullProfile =
+                            OrnamentEpub.peekProfile(originalFile)
+                        if isMixedOrnamentProfile(fullProfile) then
+                            if currentTone() == "night" then
+                                -- Do not promote a hot dark-mode reader to the
+                                -- light ornament base. Prepare the already-Bionic
+                                -- full shadow's night assets first, then reload once.
+                                ensureDisplayShadowAsync(
+                                    originalFile,
+                                    fullPath,
+                                    fullProfile,
+                                    "night",
+                                    function(_, err)
+                                        if err then
+                                            logger.warn(
+                                                "[Burrow bionic] Full night ornament preparation failed",
+                                                err
+                                            )
+                                        end
+                                        scheduleHotPromotion(
+                                            originalFile,
+                                            hotPath,
+                                            fullPath
+                                        )
+                                    end
+                                )
+                            else
+                                scheduleHotPromotion(
+                                    originalFile,
+                                    hotPath,
+                                    fullPath
+                                )
+                                -- While the reader is using the light base,
+                                -- prepare the only extra mixed-image variant so
+                                -- the next Night Mode switch has no Bionic text work.
+                                ensureDisplayShadowAsync(
+                                    originalFile,
+                                    fullPath,
+                                    fullProfile,
+                                    "night",
+                                    function(_, err)
+                                        if err then
+                                            logger.warn(
+                                                "[Burrow bionic] Full night ornament prewarm failed",
+                                                err
+                                            )
+                                        end
+                                    end
+                                )
+                            end
+                        else
+                            scheduleHotPromotion(
+                                originalFile,
+                                hotPath,
+                                fullPath
+                            )
+                        end
                     end)
                 end
             end

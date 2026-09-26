@@ -4,6 +4,20 @@ All notable changes to Burrow will be documented here.
 
 ## [Unreleased]
 
+## [0.4.12-beta.6] - 2026-09-26
+
+### Changed
+
+- Mixed-image Bionic books now use a hybrid ornament path: the normal Bionic shadow remains the light variant, while Burrow prepares a dark ornament-only shadow from that already-Bionic EPUB without running the Bionic text transformer again.
+- Dark ornament variants are prewarmed cooperatively from the loaded or completed Bionic shadow, leaving photographs and other ineligible images untouched while recoloring only eligible ornaments.
+- Night Mode swaps between the prepared Bionic light base and dark ornament variant with semantic text and percentage position restoration.
+- Fully adaptive books still use the instant no-reload ornament repaint path, so only mixed-image books require a document swap.
+
+### Fixed
+
+- Fixed mixed-image Bionic EPUBs never changing ornament palettes in dark mode because the fast adaptive path previously required every non-cover image in the book to be eligible.
+- Fixed newly inspected all-eligible Bionic books failing to enter the adaptive repaint path until a later reopen.
+
 ## [0.4.12-beta.5] - 2026-09-25
 
 ### Changed
