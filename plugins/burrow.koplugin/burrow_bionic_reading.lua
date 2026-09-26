@@ -355,6 +355,69 @@ function Bionic.setOpenProgressHint(source, progress)
     OPEN_PROGRESS_HINTS[source] = progress
 end
 
+local function currentXPointer(document)
+    if not document or type(document.getXPointer) ~= "function" then return nil end
+    local ok, value = pcall(document.getXPointer, document)
+    if ok then return value end
+end
+
+local function trackHotPosition(plugin)
+    local reader = plugin and plugin.ui or nil
+    local document = reader and reader.document or nil
+    if not reader or not document or reader.tearing_down
+        or document._burrow_bionic_hot ~= true
+    then
+        return
+    end
+
+    local anchor = captureTextAnchor and captureTextAnchor(reader) or nil
+    if anchor and isPendingAnchor and isPendingAnchor(anchor) then
+        document._burrow_bionic_boundary_waiting = true
+        local fallback = document._burrow_bionic_last_valid_xpointer
+        if fallback and reader.rolling
+            and type(reader.rolling.onGotoXPointer) == "function"
+        then
+            pcall(reader.rolling.onGotoXPointer, reader.rolling, fallback)
+        end
+        if not document._burrow_bionic_boundary_notice then
+            document._burrow_bionic_boundary_notice = true
+            UIManager:show(InfoMessage:new{
+                text = _("Preparing more Bionic text…"),
+                timeout = 1.5,
+            })
+        end
+        return
+    end
+
+    local xpointer = currentXPointer(document)
+    if xpointer then
+        document._burrow_bionic_last_valid_xpointer = xpointer
+    end
+    if anchor then
+        document._burrow_bionic_last_valid_anchor = anchor
+    end
+    if captureReadingPercent then
+        document._burrow_bionic_last_valid_percent =
+            captureReadingPercent(reader)
+    end
+
+    local currentPage, pageCount
+    if type(document.getCurrentPage) == "function" then
+        local ok, value = pcall(document.getCurrentPage, document)
+        if ok then currentPage = tonumber(value) end
+    end
+    if type(document.getPageCount) == "function" then
+        local ok, value = pcall(document.getPageCount, document)
+        if ok then pageCount = tonumber(value) end
+    end
+
+    document._burrow_bionic_boundary_waiting =
+        currentPage ~= nil and pageCount ~= nil and currentPage >= pageCount - 1
+    if not document._burrow_bionic_boundary_waiting then
+        document._burrow_bionic_boundary_notice = false
+    end
+end
+
 local function scheduleHotPromotion(source, hotPath, fullPath)
     local stableTicks = 0
     local lastXPointer
@@ -384,12 +447,7 @@ local function scheduleHotPromotion(source, hotPath, fullPath)
             return
         end
 
-        local xpointer
-        if type(document.getXPointer) == "function" then
-            local ok, value = pcall(document.getXPointer, document)
-            if ok then xpointer = value end
-        end
-
+        local xpointer = currentXPointer(document)
         if lastXPointer ~= nil and xpointer == lastXPointer then
             stableTicks = stableTicks + 1
         else
@@ -397,14 +455,35 @@ local function scheduleHotPromotion(source, hotPath, fullPath)
         end
         lastXPointer = xpointer
 
-        if stableTicks < 2 then
+        if document._burrow_bionic_boundary_waiting ~= true
+            and stableTicks < 2
+        then
             UIManager:scheduleIn(0.6, check)
             return
         end
 
         if type(reader.reloadDocument) ~= "function" then return end
 
-        local savedXPointer = xpointer
+        local currentAnchor = captureTextAnchor and captureTextAnchor(reader) or nil
+        local pending = currentAnchor and isPendingAnchor
+            and isPendingAnchor(currentAnchor)
+        local savedXPointer = pending
+            and document._burrow_bionic_last_valid_xpointer
+            or xpointer
+        local savedAnchor = pending
+            and document._burrow_bionic_last_valid_anchor
+            or currentAnchor
+        local savedPercent = pending
+            and document._burrow_bionic_last_valid_percent
+            or (captureReadingPercent and captureReadingPercent(reader) or nil)
+
+        if not savedXPointer then
+            savedXPointer = document._burrow_bionic_last_valid_xpointer
+        end
+        if not savedAnchor then
+            savedAnchor = document._burrow_bionic_last_valid_anchor
+        end
+
         logger.info("[Burrow bionic] Promoting hot EPUB to complete shadow")
         local okReload, reloadErr = pcall(
             reader.reloadDocument,
@@ -412,17 +491,29 @@ local function scheduleHotPromotion(source, hotPath, fullPath)
             nil,
             true,
             function(reopenedReader)
+                local rawRestored = false
                 if savedXPointer
                     and reopenedReader
                     and reopenedReader.rolling
                     and type(reopenedReader.rolling.onGotoXPointer) == "function"
                 then
-                    pcall(
+                    rawRestored = pcall(
                         reopenedReader.rolling.onGotoXPointer,
                         reopenedReader.rolling,
                         savedXPointer
                     )
                 end
+
+                -- Prepared spine items contain the same transformed XHTML in the
+                -- hot and complete shadows, so their XPointer is normally exact.
+                -- The semantic anchor is an independent guard against a DOM/path
+                -- mismatch and never relies on a synthetic preparation chapter.
+                if savedAnchor and restoreSemanticAnchor then
+                    restoreSemanticAnchor(reopenedReader, savedAnchor)
+                elseif not rawRestored and restoreReadingPercent then
+                    restoreReadingPercent(reopenedReader, savedPercent)
+                end
+
                 os.remove(hotPath)
             end
         )
