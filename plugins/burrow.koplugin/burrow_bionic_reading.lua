@@ -71,8 +71,29 @@ end
 
 local HOT_SPINE_RADIUS = 12
 local ASYNC_STEP_DELAY = 0.01
+local ASYNC_INACTIVE_DELAY = 0.20
+local ASYNC_MAX_INACTIVE_TICKS = 12
 local ASYNC_JOBS = {}
 local OPEN_PROGRESS_HINTS = {}
+
+local function activeReaderSource()
+    local ok, ReaderUI = pcall(require, "apps/reader/readerui")
+    if not ok or type(ReaderUI) ~= "table" then
+        return nil, "idle"
+    end
+
+    local reader = ReaderUI.instance
+    if type(reader) ~= "table" or reader.tearing_down then
+        return nil, "idle"
+    end
+
+    local document = reader.document
+    if type(document) ~= "table" then
+        return nil, "idle"
+    end
+
+    return document._burrow_bionic_original_file or document.file, "active"
+end
 
 -- These helpers are implemented later in the module, but hot-cache lifecycle
 -- callbacks are registered before their definitions. Keep explicit upvalues so
@@ -191,6 +212,9 @@ function Bionic.ensureCacheAsync(source, callback)
 
     local job = {
         callbacks = { callback },
+        source = source,
+        inactive_ticks = 0,
+        cancel_requested = false,
     }
     ASYNC_JOBS[target] = job
 
@@ -226,15 +250,51 @@ function Bionic.ensureCacheAsync(source, callback)
         end
     end
 
+    local function abandon(reason)
+        if ASYNC_JOBS[target] == job then
+            ASYNC_JOBS[target] = nil
+        end
+        job.callbacks = {}
+        os.remove(target)
+        os.remove(target .. ".tmp")
+        logger.dbg(
+            "[Burrow bionic] Discarded inactive background shadow build",
+            reason,
+            source
+        )
+    end
+
     local function step()
         if ASYNC_JOBS[target] ~= job then return end
+        if job.cancel_requested then
+            abandon("idle maintenance")
+            return
+        end
+
+        local activeSource, state = activeReaderSource()
+        if state == "active" and activeSource ~= source then
+            abandon("different book is active")
+            return
+        elseif state ~= "active" then
+            job.inactive_ticks = job.inactive_ticks + 1
+            if job.inactive_ticks >= ASYNC_MAX_INACTIVE_TICKS then
+                abandon("reader has been closed")
+                return
+            end
+            UIManager:scheduleIn(ASYNC_INACTIVE_DELAY, step)
+            return
+        end
+        job.inactive_ticks = 0
+
         local ok, result, buildErr = coroutine.resume(co)
         if not ok then
             finish(nil, tostring(result))
+            os.remove(target .. ".tmp")
             return
         end
         if coroutine.status(co) == "dead" then
             finish(result, buildErr)
+            os.remove(target .. ".tmp")
             return
         end
         UIManager:scheduleIn(ASYNC_STEP_DELAY, step)
@@ -242,6 +302,35 @@ function Bionic.ensureCacheAsync(source, callback)
 
     logger.info("[Burrow bionic] Starting cooperative full shadow build", source)
     UIManager:nextTick(step)
+end
+
+function Bionic.pruneRuntimeState(activeSource)
+    local removedHints = 0
+    local cancelledJobs = 0
+
+    for source in pairs(OPEN_PROGRESS_HINTS) do
+        if source ~= activeSource then
+            OPEN_PROGRESS_HINTS[source] = nil
+            removedHints = removedHints + 1
+        end
+    end
+
+    for _, job in pairs(ASYNC_JOBS) do
+        if job.source ~= activeSource then
+            if not job.cancel_requested then
+                job.cancel_requested = true
+                cancelledJobs = cancelledJobs + 1
+            end
+        end
+    end
+
+    return removedHints, cancelledJobs
+end
+
+function Bionic.runtimeJobCount()
+    local count = 0
+    for _ in pairs(ASYNC_JOBS) do count = count + 1 end
+    return count
 end
 
 function Bionic.setOpenProgressHint(source, progress)
