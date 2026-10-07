@@ -343,6 +343,27 @@ local function hotBucket(progress)
     return math.floor(clampProgress(progress) * 1000 + 0.5)
 end
 
+function Epub.pruneRuntimeState(activeSource)
+    local removed = 0
+    for key in pairs(PREFERRED_CACHES) do
+        local separator = key:find("\0", 1, true)
+        local source = separator and key:sub(1, separator - 1) or nil
+        if source ~= activeSource then
+            PREFERRED_CACHES[key] = nil
+            removed = removed + 1
+        end
+    end
+    return removed
+end
+
+function Epub.runtimeJobCount()
+    local count = 0
+    for _ in pairs(ASYNC_PROFILE_JOBS) do count = count + 1 end
+    for _ in pairs(ASYNC_CACHE_JOBS) do count = count + 1 end
+    for _ in pairs(ASYNC_HOT_CACHE_JOBS) do count = count + 1 end
+    return count
+end
+
 function Epub.hotCachePath(source, paletteName, progress, radius)
     if not paletteFor(paletteName) then
         return nil, "Unknown decorative EPUB palette: " .. tostring(paletteName)

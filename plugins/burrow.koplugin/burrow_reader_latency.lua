@@ -457,6 +457,21 @@ function Module.apply()
     return true
 end
 
+function Module.pruneRuntimeState(activeSource)
+    local removed = 0
+    for source in pairs(IDENTITY_CACHE) do
+        if source ~= activeSource then
+            IDENTITY_CACHE[source] = nil
+            removed = removed + 1
+        end
+    end
+
+    -- JOB_SOURCES is deliberately not pruned here. Active cooperative workers
+    -- use that table to decide whether their source book is still the reader.
+    -- Their scheduler removes entries when a job completes or is abandoned.
+    return removed
+end
+
 function Module.attachPluginClass(plugin_class)
     if type(plugin_class) ~= "table" then
         return false, "Burrow plugin class is unavailable"
