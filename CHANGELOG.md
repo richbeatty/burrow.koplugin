@@ -4,6 +4,22 @@ All notable changes to Burrow will be documented here.
 
 ## [Unreleased]
 
+## [0.4.12-beta.8] - 2026-10-07
+
+### Changed
+
+- Kindle transition performance now keeps the fast foreground path from 0.4.11 while moving the missing cleanup work into a coalesced idle-maintenance cycle instead of restoring synchronous open-time cleanup.
+- After document opens, reloads, reader-home transitions, and resume, Burrow waits for a genuine idle window with no recent input and no active CRengine rerender before running two full Lua collection passes separated in time.
+- Kindle idle maintenance prunes inactive ornament preference entries, stale reader-latency source identities, old Bionic progress hints, and background Bionic jobs that no longer belong to the active book.
+- Bionic full-shadow workers now pause briefly when ReaderUI disappears during a reload and abandon themselves when another book becomes active or the reader remains closed.
+- The general transition-performance module now receives the actual Burrow plugin class, so its reader-activity hooks finally observe page turns and mode changes and can throttle distant ornament work as originally intended.
+
+### Fixed
+
+- Reduced long-uptime Kindle slowdown caused by resource cleanup being weakened on the foreground path without an equivalent deferred cleanup cycle.
+- Prevented abandoned Bionic background work from continuing after the user switches books or leaves the reader.
+- Prevented process-lifetime ornament and identity lookup tables from growing indefinitely across many books while preserving on-disk caches for fast reopen behavior.
+
 ## [0.4.12-beta.7] - 2026-09-26
 
 ### Changed
