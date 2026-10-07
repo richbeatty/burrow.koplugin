@@ -8,6 +8,14 @@ local Module = {}
 local RERENDER_RETRY = 0.35
 local LIBRARY_IDLE_DELAY = 2.0
 local LIBRARY_IDLE_RETRIES = 5
+local MAINTENANCE_IDLE_SECONDS = 8.0
+local MAINTENANCE_RECHECK_SECONDS = 1.0
+local MAINTENANCE_SECOND_PASS_DELAY = 1.5
+
+local last_input_time = time.now()
+local maintenance_scheduled = false
+local maintenance_reason
+local input_watcher
 
 local function pack(...)
     return { n = select("#", ...), ... }
@@ -25,6 +33,170 @@ local function stripPcallStatus(values)
     end
     if not ok then error(result[1]) end
     return unpackPacked(result)
+end
+
+local function markInputActivity()
+    last_input_time = time.now()
+end
+
+local function activeReaderDocuments()
+    local ok, ReaderUI = pcall(require, "apps/reader/readerui")
+    if not ok or type(ReaderUI) ~= "table" then
+        return nil, nil, nil
+    end
+
+    local reader = ReaderUI.instance
+    if type(reader) ~= "table" or reader.tearing_down then
+        return nil, nil, nil
+    end
+
+    local document = reader.document
+    if type(document) ~= "table" then
+        return reader, nil, nil
+    end
+
+    local ornamentSource =
+        document._burrow_epub_ornaments_source_file or document.file
+    local bionicSource =
+        document._burrow_bionic_original_file or document.file
+    return reader, ornamentSource, bionicSource
+end
+
+local function readerHasBlockingWork(reader)
+    if not reader or reader.tearing_down then return false end
+    local rolling = reader.rolling
+    return type(rolling) == "table"
+        and rolling._current_rerendering_pid ~= nil
+end
+
+local function readRssKb()
+    local file = io.open("/proc/self/status", "r")
+    if not file then return nil end
+    local content = file:read("*a")
+    file:close()
+    if not content then return nil end
+    return tonumber(content:match("VmRSS:%s+(%d+)%s+kB"))
+end
+
+local function pruneRuntimeState()
+    local _, ornamentSource, bionicSource = activeReaderDocuments()
+    local removed = 0
+    local cancelled = 0
+
+    local okOrnaments, OrnamentEpub = pcall(
+        require,
+        "burrow_soft_palette_epub"
+    )
+    if okOrnaments
+        and type(OrnamentEpub) == "table"
+        and type(OrnamentEpub.pruneRuntimeState) == "function"
+    then
+        local ok, count = pcall(
+            OrnamentEpub.pruneRuntimeState,
+            ornamentSource
+        )
+        if ok then removed = removed + (tonumber(count) or 0) end
+    end
+
+    local okLatency, ReaderLatency = pcall(
+        require,
+        "burrow_reader_latency"
+    )
+    if okLatency
+        and type(ReaderLatency) == "table"
+        and type(ReaderLatency.pruneRuntimeState) == "function"
+    then
+        local ok, count = pcall(
+            ReaderLatency.pruneRuntimeState,
+            ornamentSource
+        )
+        if ok then removed = removed + (tonumber(count) or 0) end
+    end
+
+    local Bionic = package.loaded["burrow.bionic_reading"]
+    if type(Bionic) == "table"
+        and type(Bionic.pruneRuntimeState) == "function"
+    then
+        local ok, hints, jobs = pcall(
+            Bionic.pruneRuntimeState,
+            bionicSource
+        )
+        if ok then
+            removed = removed + (tonumber(hints) or 0)
+            cancelled = cancelled + (tonumber(jobs) or 0)
+        end
+    end
+
+    return removed, cancelled
+end
+
+local function scheduleIdleMaintenance(reason, initialDelay)
+    maintenance_reason = reason or maintenance_reason or "transition"
+    if maintenance_scheduled then return end
+    maintenance_scheduled = true
+
+    local phase = 1
+    local function step()
+        local reader = activeReaderDocuments()
+        if readerHasBlockingWork(reader) then
+            UIManager:scheduleIn(MAINTENANCE_RECHECK_SECONDS, step)
+            return
+        end
+
+        local idleMs = time.to_ms(time.since(last_input_time))
+        local idleNeededMs = MAINTENANCE_IDLE_SECONDS * 1000
+        if idleMs < idleNeededMs then
+            local wait = math.max(
+                MAINTENANCE_RECHECK_SECONDS,
+                (idleNeededMs - idleMs) / 1000
+            )
+            UIManager:scheduleIn(wait, step)
+            return
+        end
+
+        local removed, cancelled = pruneRuntimeState()
+        local luaBefore = collectgarbage("count")
+        local rssBefore = readRssKb()
+
+        -- KOReader normally performs two full collections at document open.
+        -- Burrow still keeps only the first on the critical Kindle open path,
+        -- but performs the missing work here after the device has genuinely
+        -- been idle. Split the two maintenance passes so a new touch can defer
+        -- the second one instead of trapping the reader behind a long pause.
+        pcall(collectgarbage)
+
+        local luaAfter = collectgarbage("count")
+        local rssAfter = readRssKb()
+        logger.dbg(
+            "[Burrow performance] Kindle idle maintenance",
+            maintenance_reason,
+            "pass",
+            phase,
+            "lua_kb",
+            math.floor(luaBefore),
+            "->",
+            math.floor(luaAfter),
+            "rss_kb",
+            rssBefore or -1,
+            "->",
+            rssAfter or -1,
+            "runtime_entries",
+            removed,
+            "cancelled_jobs",
+            cancelled
+        )
+
+        if phase == 1 then
+            phase = 2
+            UIManager:scheduleIn(MAINTENANCE_SECOND_PASS_DELAY, step)
+            return
+        end
+
+        maintenance_scheduled = false
+        maintenance_reason = nil
+    end
+
+    UIManager:scheduleIn(initialDelay or MAINTENANCE_IDLE_SECONDS, step)
 end
 
 local function replaceUpvalue(fn, wanted, replacement)
@@ -113,6 +285,9 @@ local function installOnePassDocumentGc()
         local results = pack(pcall(originalOpenDocument, self, file, provider))
         if _G.collectgarbage == shim then
             _G.collectgarbage = originalCollect
+        end
+        if results[1] then
+            scheduleIdleMaintenance("document open")
         end
         return stripPcallStatus(results)
     end
@@ -206,16 +381,34 @@ local function installReaderTransitions()
 
         self._burrow_kindle_reload_ready = nil
 
+        local results
         if ornament_reload then
             -- This transition immediately reopens the same book and position.
             -- Saving KOReader's current-page bitmap before tearing down adds a
             -- synchronous Kindle disk write without helping the new ReaderUI.
-            return withoutDocCacheSerialize(function()
-                return originalReloadDocument(self, unpackPacked(arguments))
-            end)
+            results = pack(pcall(
+                withoutDocCacheSerialize,
+                function()
+                    return originalReloadDocument(
+                        self,
+                        unpackPacked(arguments)
+                    )
+                end
+            ))
+        else
+            results = pack(pcall(
+                originalReloadDocument,
+                self,
+                unpackPacked(arguments)
+            ))
         end
 
-        return originalReloadDocument(self, unpackPacked(arguments))
+        if results[1] then
+            scheduleIdleMaintenance(
+                ornament_reload and "ornament reload" or "document reload"
+            )
+        end
+        return stripPcallStatus(results)
     end
 
     local function deferHomeSerialization(docPath, serializer, docCache)
@@ -283,6 +476,9 @@ local function installReaderTransitions()
         if deferredPath then
             deferHomeSerialization(deferredPath, originalSerialize, DocCache)
         end
+        if results[1] then
+            scheduleIdleMaintenance("reader home")
+        end
 
         return stripPcallStatus(results)
     end
@@ -291,11 +487,49 @@ local function installReaderTransitions()
     return true
 end
 
+function Module.attachPluginClass(plugin_class)
+    if not Device:isKindle() then return true end
+    if type(plugin_class) ~= "table" then
+        return false, "Burrow plugin class unavailable"
+    end
+    if plugin_class._burrow_kindle_idle_maintenance_v1 then return true end
+    plugin_class._burrow_kindle_idle_maintenance_v1 = true
+
+    local originalResume = plugin_class.onResume
+    function plugin_class:onResume(...)
+        markInputActivity()
+        local result
+        if originalResume then
+            result = originalResume(self, ...)
+        end
+        scheduleIdleMaintenance("resume")
+        return result
+    end
+
+    local originalReaderReady = plugin_class.onReaderReady
+    function plugin_class:onReaderReady(...)
+        markInputActivity()
+        local result
+        if originalReaderReady then
+            result = originalReaderReady(self, ...)
+        end
+        scheduleIdleMaintenance("reader ready")
+        return result
+    end
+
+    return true
+end
+
 function Module.apply()
     if Module.applied then return true end
     if not Device:isKindle() then
         Module.applied = true
         return true
+    end
+
+    if not input_watcher then
+        input_watcher = markInputActivity
+        UIManager.event_hook:register("InputEvent", input_watcher)
     end
 
     local warmupOk, warmupErr = disableGeneralKindleWarmups()
