@@ -206,6 +206,11 @@ function Bionic.ensureCacheAsync(source, callback)
 
     local existingJob = ASYNC_JOBS[target]
     if existingJob then
+        -- If this book became active again before an idle-maintenance cancel
+        -- reached the worker, revive the existing cooperative build instead of
+        -- throwing away useful progress and starting a second copy later.
+        existingJob.cancel_requested = false
+        existingJob.inactive_ticks = 0
         existingJob.callbacks[#existingJob.callbacks + 1] = callback
         return
     end
