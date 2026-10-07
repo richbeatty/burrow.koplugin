@@ -176,6 +176,24 @@ local Burrow = WidgetContainer:extend {
     name = "burrow",
 }
 
+-- The Kindle transition layer is loaded early by the dual-tone prewarm helper
+-- so it can isolate Kindle from the general warmup/cache defaults before those
+-- helpers are applied. Once the actual Burrow plugin class exists, attach the
+-- long-uptime idle maintenance hooks to that class as a separate step.
+local KindleTransition = package.loaded["burrow_kindle_transition_performance"]
+if type(KindleTransition) == "table"
+    and type(KindleTransition.attachPluginClass) == "function"
+then
+    local ok, err = pcall(KindleTransition.attachPluginClass, Burrow)
+    if not ok then
+        logger.warn(
+            burrow_debug.logprefix,
+            "Kindle idle maintenance hook could not attach",
+            err
+        )
+    end
+end
+
 -- Decorative EPUB palettes need to observe Night Mode only after KOReader's
 -- native DeviceListener has completed the transition. Burrow plugin instances
 -- are registered after DeviceListener, so attach the observer to Burrow itself
@@ -275,9 +293,12 @@ if transition_ok
     and type(TransitionPerformance) == "table"
     and type(TransitionPerformance.apply) == "function"
 then
+    -- apply() is a plain function whose single argument is the Burrow plugin
+    -- class. Passing the module table here used to attach activity hooks to the
+    -- wrong object, so the background throttle could not actually observe page
+    -- turns and reader interaction.
     local apply_ok, applied, apply_error = pcall(
         TransitionPerformance.apply,
-        TransitionPerformance,
         Burrow
     )
     if not apply_ok or applied == false then
