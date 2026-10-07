@@ -11,8 +11,10 @@ local LIBRARY_IDLE_RETRIES = 5
 local MAINTENANCE_IDLE_SECONDS = 8.0
 local MAINTENANCE_RECHECK_SECONDS = 1.0
 local MAINTENANCE_SECOND_PASS_DELAY = 1.5
+local MAINTENANCE_MIN_INTERVAL_SECONDS = 300
 
 local last_input_time = time.now()
+local last_maintenance_time
 local maintenance_scheduled = false
 local maintenance_reason
 local input_watcher
@@ -143,6 +145,23 @@ local function scheduleIdleMaintenance(reason, initialDelay)
             return
         end
 
+        if last_maintenance_time then
+            local sinceMaintenanceMs =
+                time.to_ms(time.since(last_maintenance_time))
+            local minimumIntervalMs =
+                MAINTENANCE_MIN_INTERVAL_SECONDS * 1000
+            if sinceMaintenanceMs < minimumIntervalMs then
+                UIManager:scheduleIn(
+                    math.max(
+                        MAINTENANCE_RECHECK_SECONDS,
+                        (minimumIntervalMs - sinceMaintenanceMs) / 1000
+                    ),
+                    step
+                )
+                return
+            end
+        end
+
         local idleMs = time.to_ms(time.since(last_input_time))
         local idleNeededMs = MAINTENANCE_IDLE_SECONDS * 1000
         if idleMs < idleNeededMs then
@@ -192,6 +211,7 @@ local function scheduleIdleMaintenance(reason, initialDelay)
             return
         end
 
+        last_maintenance_time = time.now()
         maintenance_scheduled = false
         maintenance_reason = nil
     end
