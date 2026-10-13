@@ -4,6 +4,17 @@ All notable changes to Burrow will be documented here.
 
 ## [Unreleased]
 
+## [0.4.12] - 2026-10-13
+
+### Changed
+
+- Promoted the user-tested 0.4.12-beta.8 tree to stable without runtime behavior changes.
+- Added cooperative, spine-priority Bionic Reading startup so uncached EPUBs open without multi-minute frozen full-book preprocessing.
+- Restored the proven decorative-ornament engine on top of Bionic shadows, preserving light/dark ornament handling while keeping Bionic text generation separate.
+- Added nonblocking Kindle Wi-Fi recovery after resume so network scans no longer freeze the reader UI and replay queued taps afterward.
+- Added Kindle idle maintenance that performs deferred cleanup, prunes stale runtime state, and stops inactive Bionic workers without putting expensive cleanup back on the foreground path.
+- Improved hot-to-full Bionic promotion and position restoration so completed shadows replace temporary caches without returning the reader to the cover.
+
 ## [0.4.12-beta.8] - 2026-10-07
 
 ### Changed
